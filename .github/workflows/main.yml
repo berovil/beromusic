@@ -1,3 +1,16 @@
+name: Compilar APK de Android
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout del código
         uses: actions/checkout@v4
@@ -7,8 +20,6 @@
         with:
           distribution: 'zulu'
           java-version: '17'
-
-      # Omitimos el paso "chmod" ya que tu carpeta "Bero" no contiene el archivo ejecutable gradlew
 
       - name: Compilar el APK
         run: gradle assembleDebug
