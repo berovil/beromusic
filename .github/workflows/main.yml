@@ -25,7 +25,7 @@ jobs:
       run: ./gradlew assembleDebug
 
     - name: Subir APK para descargar
-  uses: actions/upload-artifact@v4
-  with:
-    name: Bero-App-APK
-    path: app/build/outputs/apk/debug/app-debug.apk
+      uses: actions/upload-artifact@v4
+      with:
+        name: Bero-App-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
