@@ -14,7 +14,16 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -58,6 +67,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -75,6 +86,7 @@ import com.example.bero.ui.components.BeroButton
 import com.example.bero.ui.components.BeroIconButton
 import com.example.bero.ui.components.pressable
 import com.example.bero.ui.screens.AlbumsScreen
+import com.example.bero.ui.screens.AddToFolderDialog
 import com.example.bero.ui.screens.DeleteConfirmDialog
 import com.example.bero.ui.screens.FavoritesScreen
 import com.example.bero.ui.screens.FoldersScreen
@@ -84,6 +96,7 @@ import com.example.bero.ui.screens.SettingsScreen
 import com.example.bero.ui.screens.TrackInfoDialog
 import com.example.bero.ui.screens.TrackMenuSheet
 import com.example.bero.ui.screens.TracksScreen
+import com.example.bero.ui.theme.appBackground
 
 enum class MainTab(val label: String, val icon: ImageVector) {
     Tracks("Pistas", Icons.Rounded.QueueMusic),
@@ -191,6 +204,9 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
 
     // Menu contextual (pulsacion larga) y sus acciones
     var menuTrack by remember { mutableStateOf<Track?>(null) }
+    var menuFolderId by remember { mutableStateOf<String?>(null) } // != null si el menu viene de una carpeta propia
+    var addToFolderTrack by remember { mutableStateOf<Track?>(null) }
+    val playlists by vm.playlists.collectAsStateWithLifecycle()
     var infoTrack by remember { mutableStateOf<Track?>(null) }
     var deleteTrack by remember { mutableStateOf<Track?>(null) }
     var editorTrack by remember { mutableStateOf<Track?>(null) }
@@ -242,31 +258,58 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
     BackHandler(enabled = showSettings && !expanded) { showSettings = false }
     BackHandler(enabled = editorOpen && !expanded) { editorOpen = false }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .appBackground()
+    ) {
         Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = Color.Transparent,
             bottomBar = {
                 Column {
-                    current?.let { track ->
-                        MiniPlayer(
-                            track = track,
-                            isPlaying = isPlaying,
-                            onOpen = vm::expandPlayer,
-                            onToggle = vm::togglePlay,
-                            onNext = vm::next
-                        )
+                    AnimatedVisibility(
+                        visible = current != null,
+                        enter = slideInVertically(tween(260)) { it } + fadeIn(tween(260)),
+                        exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160))
+                    ) {
+                        current?.let { track ->
+                            MiniPlayer(
+                                track = track,
+                                isPlaying = isPlaying,
+                                onOpen = vm::expandPlayer,
+                                onToggle = vm::togglePlay,
+                                onNext = vm::next
+                            )
+                        }
                     }
                     BeroBottomBar(selected = tab, onSelect = { tab = it })
                 }
             }
         ) { padding ->
             Box(Modifier.padding(padding)) {
-                val openMenu: (Track) -> Unit = { menuTrack = it }
-                when (tab) {
-                    MainTab.Tracks -> TracksScreen(vm, onTrackMenu = openMenu) { showSettings = true }
-                    MainTab.Albums -> AlbumsScreen(vm, onTrackMenu = openMenu) { showSettings = true }
-                    MainTab.Folders -> FoldersScreen(vm, onTrackMenu = openMenu) { showSettings = true }
-                    MainTab.Favorites -> FavoritesScreen(vm, onTrackMenu = openMenu) { showSettings = true }
+                val openMenu: (Track) -> Unit = {
+                    menuFolderId = null
+                    menuTrack = it
+                }
+                val openFolderMenu: (Track, String) -> Unit = { track, folderId ->
+                    menuFolderId = folderId
+                    menuTrack = track
+                }
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(140)) },
+                    label = "tabs"
+                ) { currentTab ->
+                    when (currentTab) {
+                        MainTab.Tracks -> TracksScreen(vm, onTrackMenu = openMenu) { showSettings = true }
+                        MainTab.Albums -> AlbumsScreen(vm, onTrackMenu = openMenu) { showSettings = true }
+                        MainTab.Folders -> FoldersScreen(
+                            vm,
+                            onTrackMenu = openMenu,
+                            onFolderTrackMenu = openFolderMenu
+                        ) { showSettings = true }
+                        MainTab.Favorites -> FavoritesScreen(vm, onTrackMenu = openMenu) { showSettings = true }
+                    }
                 }
             }
         }
@@ -303,10 +346,24 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
                     menuTrack = null
                     infoTrack = t
                 },
+                onSearchLyrics = {
+                    menuTrack = null
+                    vm.searchLyricsOnline(t)
+                },
                 onEditLrc = {
                     menuTrack = null
                     editorTrack = t
                     editorOpen = true
+                },
+                onAddToFolder = {
+                    menuTrack = null
+                    addToFolderTrack = t
+                },
+                onRemoveFromFolder = menuFolderId?.let { folderId ->
+                    {
+                        menuTrack = null
+                        vm.removeFromFolder(folderId, t)
+                    }
                 },
                 onShare = {
                     menuTrack = null
@@ -319,6 +376,20 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
             )
         }
         infoTrack?.let { t -> TrackInfoDialog(vm, t) { infoTrack = null } }
+        addToFolderTrack?.let { t ->
+            AddToFolderDialog(
+                playlists = playlists,
+                onPick = { folder ->
+                    vm.addToFolder(folder.id, t)
+                    addToFolderTrack = null
+                },
+                onCreate = { name ->
+                    vm.createFolder(name)?.let { vm.addToFolder(it, t) }
+                    addToFolderTrack = null
+                },
+                onDismiss = { addToFolderTrack = null }
+            )
+        }
         deleteTrack?.let { t ->
             DeleteConfirmDialog(
                 track = t,
@@ -414,6 +485,23 @@ private fun BeroBottomBar(selected: MainTab, onSelect: (MainTab) -> Unit) {
     ) {
         MainTab.entries.forEach { item ->
             val isSelected = item == selected
+            val iconScale by animateFloatAsState(
+                targetValue = if (isSelected) 1.14f else 1f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+                label = "tabIconScale"
+            )
+            val pillColor by animateColorAsState(
+                targetValue = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                else androidx.compose.ui.graphics.Color.Transparent,
+                animationSpec = tween(220),
+                label = "tabPill"
+            )
+            val tint by animateColorAsState(
+                targetValue = if (isSelected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = tween(220),
+                label = "tabTint"
+            )
             Column(
                 Modifier
                     .weight(1f)
@@ -425,18 +513,19 @@ private fun BeroBottomBar(selected: MainTab, onSelect: (MainTab) -> Unit) {
                     Modifier
                         .size(width = 58.dp, height = 32.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                            else androidx.compose.ui.graphics.Color.Transparent
-                        ),
+                        .background(pillColor),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         item.icon,
                         contentDescription = item.label,
-                        tint = if (isSelected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
+                        tint = tint,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                            }
                     )
                 }
                 Text(

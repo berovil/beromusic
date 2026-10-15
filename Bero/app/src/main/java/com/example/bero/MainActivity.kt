@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.bero.data.ThemeMode
 import com.example.bero.ui.BeroApp
@@ -25,7 +26,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val mode by vm.settings.themeMode.collectAsStateWithLifecycle()
-            val accent by vm.settings.accent.collectAsStateWithLifecycle()
+            val accentArgb by vm.settings.accentArgb.collectAsStateWithLifecycle()
+            val gradient by vm.settings.gradientBackground.collectAsStateWithLifecycle()
             val expanded by vm.playerExpanded.collectAsStateWithLifecycle()
 
             // El reproductor siempre es oscuro: iconos de barra claros aunque el tema sea "Claro".
@@ -41,7 +43,7 @@ class MainActivity : ComponentActivity() {
                 onDispose { }
             }
 
-            BeroTheme(mode = mode, accent = accent.color) {
+            BeroTheme(mode = mode, accent = Color(accentArgb), gradient = gradient) {
                 BeroApp(vm)
             }
         }

@@ -36,6 +36,7 @@ import com.example.bero.data.LrcParser
 import com.example.bero.data.Track
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.BeroButton
+import com.example.bero.ui.theme.appBackground
 import com.example.bero.ui.components.BeroChip
 import com.example.bero.ui.components.ScreenHeader
 import kotlinx.coroutines.launch
@@ -56,7 +57,7 @@ fun LrcEditorScreen(vm: BeroViewModel, track: Track, onClose: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .appBackground()
             // Absorbe toques para que nada llegue a la pantalla de atras.
             .pointerInput(Unit) { detectTapGestures { } }
             .statusBarsPadding()

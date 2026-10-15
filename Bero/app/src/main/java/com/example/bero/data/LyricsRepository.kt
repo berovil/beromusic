@@ -32,6 +32,8 @@ sealed interface LyricsState {
 
 enum class SaveTarget { NEXT_TO_AUDIO, APP_STORAGE, FAILED }
 
+enum class DownloadResult { SAVED_NEXT_TO_AUDIO, SAVED_IN_APP, NOT_FOUND, FAILED }
+
 object LrcParser {
     private val TIME_TAG = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
 
@@ -173,7 +175,22 @@ object LyricsRepository {
 
     // ---------- LRCLIB ----------
 
-    private fun fetchRemote(track: Track): LyricsState.Loaded? {
+    private fun fetchRemote(track: Track): LyricsState.Loaded? =
+        fetchRemoteJson(track)?.let { fromObject(it) }
+
+    /** Texto LRC crudo de LRCLIB (sincronizado si existe; si no, texto plano). */
+    private fun fetchRemoteText(track: Track): String? {
+        val o = fetchRemoteJson(track) ?: return null
+        val synced = o.str("syncedLyrics")
+        val text = if (synced.isNotBlank()) synced else o.str("plainLyrics")
+        return text.ifBlank { null }
+    }
+
+    private fun hasLyrics(o: JSONObject): Boolean =
+        o.str("syncedLyrics").isNotBlank() || o.str("plainLyrics").isNotBlank()
+
+    /** api/get (coincidencia exacta) y, si falla, api/search (la de duracion mas cercana). */
+    private fun fetchRemoteJson(track: Track): JSONObject? {
         return try {
             val seconds = (track.durationMs / 1000).toInt()
             val title = enc(track.title)
@@ -181,18 +198,16 @@ object LyricsRepository {
             val album = enc(track.album)
             val unknownArtist = track.artist == MusicRepository.UNKNOWN_ARTIST
 
-            // 1) Coincidencia exacta
             if (!unknownArtist) {
                 val getUrl = "https://lrclib.net/api/get?track_name=$title&artist_name=$artist" +
                     "&album_name=$album&duration=$seconds"
                 val body = httpGet(getUrl)
                 if (body != null) {
-                    val found = fromObject(JSONObject(body))
-                    if (found != null) return found
+                    val o = JSONObject(body)
+                    if (hasLyrics(o)) return o
                 }
             }
 
-            // 2) Busqueda aproximada
             var searchUrl = "https://lrclib.net/api/search?track_name=$title"
             if (!unknownArtist) searchUrl += "&artist_name=$artist"
             val searchBody = httpGet(searchUrl) ?: return null
@@ -218,9 +233,20 @@ object LyricsRepository {
                     }
                 }
             }
-            best?.let { fromObject(it) }
+            best
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /** Descarga la letra de LRCLIB y la guarda como .lrc (junto al audio o en el almacenamiento de la app). */
+    suspend fun downloadAndSave(track: Track): DownloadResult {
+        val text = withContext(Dispatchers.IO) { fetchRemoteText(track) }
+            ?: return DownloadResult.NOT_FOUND
+        return when (save(track, text)) {
+            SaveTarget.NEXT_TO_AUDIO -> DownloadResult.SAVED_NEXT_TO_AUDIO
+            SaveTarget.APP_STORAGE -> DownloadResult.SAVED_IN_APP
+            SaveTarget.FAILED -> DownloadResult.FAILED
         }
     }
 

@@ -19,7 +19,7 @@ import java.util.Locale
 import kotlin.random.Random
 
 object SpotifyConfig {
-    /** Registra EXACTAMENTE este valor en el Dashboard de Spotify (Redirect URIs). */
+    /** Esquema personalizado que recibe el IntentFilter de MainActivity (ultimo salto del login). */
     const val REDIRECT_URI = "com.example.bero://spotify-callback"
     const val SCOPES = "user-top-read"
     const val AUTH_URL = "https://accounts.spotify.com/authorize"
@@ -59,6 +59,7 @@ class SpotifyRepository(context: Context) {
         private const val K_REFRESH = "refresh_token"
         private const val K_VERIFIER = "pkce_verifier"
         private const val K_STATE = "oauth_state"
+        private const val K_REDIRECT = "oauth_redirect"
         private const val K_TASTE = "taste_json"
 
         fun dayKey(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
@@ -68,15 +69,16 @@ class SpotifyRepository(context: Context) {
 
     // ------------------------------------------------------------------ Autenticacion
 
-    fun buildAuthUri(clientId: String): Uri {
+    /** [redirectUri] debe ser IDENTICO al registrado en el Dashboard de Spotify; se reutiliza al canjear el code. */
+    fun buildAuthUri(clientId: String, redirectUri: String): Uri {
         val verifier = randomUrlSafe(64)
         val state = randomUrlSafe(16)
-        prefs.edit().putString(K_VERIFIER, verifier).putString(K_STATE, state).apply()
+        prefs.edit().putString(K_VERIFIER, verifier).putString(K_STATE, state).putString(K_REDIRECT, redirectUri).apply()
         val challenge = base64Url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)))
         return Uri.parse(SpotifyConfig.AUTH_URL).buildUpon()
             .appendQueryParameter("client_id", clientId)
             .appendQueryParameter("response_type", "code")
-            .appendQueryParameter("redirect_uri", SpotifyConfig.REDIRECT_URI)
+            .appendQueryParameter("redirect_uri", redirectUri)
             .appendQueryParameter("scope", SpotifyConfig.SCOPES)
             .appendQueryParameter("code_challenge_method", "S256")
             .appendQueryParameter("code_challenge", challenge)
@@ -97,7 +99,7 @@ class SpotifyRepository(context: Context) {
             mapOf(
                 "grant_type" to "authorization_code",
                 "code" to code,
-                "redirect_uri" to SpotifyConfig.REDIRECT_URI,
+                "redirect_uri" to (prefs.getString(K_REDIRECT, null) ?: SpotifyConfig.REDIRECT_URI),
                 "client_id" to clientId,
                 "code_verifier" to verifier,
             )

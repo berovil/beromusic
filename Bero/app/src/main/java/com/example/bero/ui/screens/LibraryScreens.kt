@@ -1,6 +1,14 @@
 package com.example.bero.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -22,7 +29,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,10 +54,13 @@ import com.example.bero.data.FolderGuard
 import com.example.bero.data.Track
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.Artwork
+import com.example.bero.ui.components.BeroChip
 import com.example.bero.ui.components.ScreenHeader
-import com.example.bero.ui.components.TrackList
+import com.example.bero.ui.components.ScrollAwareBox
+import com.example.bero.ui.components.TrackCollection
 import com.example.bero.ui.components.TrackRow
 import com.example.bero.ui.components.pressable
+import com.example.bero.ui.components.staggeredAppear
 
 // ------------------------------------------------------------------------ PISTAS
 
@@ -55,23 +68,28 @@ import com.example.bero.ui.components.pressable
 fun TracksScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings: () -> Unit) {
     val tracks by vm.tracks.collectAsStateWithLifecycle()
     val current by vm.currentTrack.collectAsStateWithLifecycle()
-    val hidden by vm.totalCount.collectAsStateWithLifecycle()
+    val total by vm.totalCount.collectAsStateWithLifecycle()
+    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
 
-    TrackList(
-        tracks = tracks,
-        currentId = current?.id,
-        header = {
-            val subtitle = if (hidden > tracks.size) {
-                "${tracks.size} canciones · ${hidden - tracks.size} ocultas por duración"
-            } else {
-                "${tracks.size} canciones"
-            }
-            ScreenHeader("Pistas", subtitle, onSettings = onOpenSettings)
-        },
-        emptyText = "No se encontró música. Revisa el filtro de duración en Ajustes o fuerza un escaneo.",
-        onTrackMenu = onTrackMenu,
-        onPlay = { index -> vm.playQueue(tracks, index) }
-    )
+    // El engranaje es flotante: se oculta al bajar por la lista y reaparece al subir un poco.
+    ScrollAwareBox(onOpenSettings) {
+        TrackCollection(
+            tracks = tracks,
+            currentId = current?.id,
+            viewMode = viewMode,
+            header = {
+                val subtitle = if (total > tracks.size) {
+                    "${tracks.size} canciones · ${total - tracks.size} ocultas por duración"
+                } else {
+                    "${tracks.size} canciones"
+                }
+                ScreenHeader("Pistas", subtitle)
+            },
+            emptyText = "No se encontró música. Revisa el filtro de duración en Ajustes o fuerza un escaneo.",
+            onTrackMenu = onTrackMenu,
+            onPlay = { index -> vm.playQueue(tracks, index) }
+        )
+    }
 }
 
 // ------------------------------------------------------------------------ ÁLBUMES
@@ -80,165 +98,320 @@ fun TracksScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
 fun AlbumsScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings: () -> Unit) {
     val albums by vm.albums.collectAsStateWithLifecycle()
     val current by vm.currentTrack.collectAsStateWithLifecycle()
+    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
     var selectedId by rememberSaveable { mutableStateOf<Long?>(null) }
-    val selected = albums.firstOrNull { it.id == selectedId }
 
-    BackHandler(enabled = selected != null) { selectedId = null }
+    BackHandler(enabled = selectedId != null) { selectedId = null }
 
-    if (selected == null) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(150.dp),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                ScreenHeader("Álbumes", "${albums.size} álbumes", onSettings = onOpenSettings)
-            }
-            items(albums, key = { it.id }) { album ->
-                val shape = RoundedCornerShape(24.dp)
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .pressable(shape, 0.95f) { selectedId = album.id }
-                        .padding(6.dp)
+    ScrollAwareBox(onOpenSettings) {
+        // Transicion suave entre la cuadricula de albumes y el detalle.
+        AnimatedContent(
+            targetState = selectedId,
+            transitionSpec = {
+                if (targetState != null) {
+                    (slideInHorizontally(tween(260)) { it / 4 } + fadeIn(tween(260))) togetherWith
+                        (slideOutHorizontally(tween(200)) { -it / 6 } + fadeOut(tween(160)))
+                } else {
+                    (slideInHorizontally(tween(260)) { -it / 4 } + fadeIn(tween(260))) togetherWith
+                        (slideOutHorizontally(tween(200)) { it / 6 } + fadeOut(tween(160)))
+                }
+            },
+            label = "albumsNav"
+        ) { id ->
+            val selected = albums.firstOrNull { it.id == id }
+            if (selected == null) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(150.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Artwork(
-                        album.tracks.first(),
-                        Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f),
-                        corner = 24.dp,
-                        px = 400
+                    item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
+                        ScreenHeader("Álbumes", "${albums.size} álbumes")
+                    }
+                    items(albums, key = { it.id }, contentType = { "album" }) { album ->
+                        val shape = RoundedCornerShape(24.dp)
+                        Column(
+                            Modifier
+                                .animateItem()
+                                .fillMaxWidth()
+                                .pressable(shape, 0.95f) { selectedId = album.id }
+                                .padding(6.dp)
+                        ) {
+                            Artwork(
+                                album.tracks.first(),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f),
+                                corner = 24.dp,
+                                px = 400
+                            )
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                album.name,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "${album.artist} · ${album.tracks.size}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            } else {
+                TrackCollection(
+                    tracks = selected.tracks,
+                    currentId = current?.id,
+                    viewMode = viewMode,
+                    header = {
+                        ScreenHeader(
+                            title = selected.name,
+                            subtitle = "${selected.artist} · ${selected.tracks.size} pistas",
+                            onBack = { selectedId = null }
+                        )
+                    },
+                    emptyText = "Álbum vacío",
+                    onTrackMenu = onTrackMenu,
+                    onPlay = { index -> vm.playQueue(selected.tracks, index) }
+                )
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------ CARPETAS (fisicas + virtuales)
+
+@Composable
+fun FoldersScreen(
+    vm: BeroViewModel,
+    onTrackMenu: (Track) -> Unit,
+    onFolderTrackMenu: (Track, String) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val tracks by vm.tracks.collectAsStateWithLifecycle()
+    val current by vm.currentTrack.collectAsStateWithLifecycle()
+    val playlists by vm.playlists.collectAsStateWithLifecycle()
+    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
+    val root = vm.storageRoot
+
+    var rawPath by rememberSaveable { mutableStateOf(root) }
+    var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showCreate by remember { mutableStateOf(false) }
+    var renameId by remember { mutableStateOf<String?>(null) }
+
+    // Defensa extra: si la ruta sale de la raiz o es una carpeta bloqueada, se vuelve a la raiz.
+    val path = if (!rawPath.startsWith(root) || FolderGuard.isBlockedPath(rawPath)) root else rawPath
+    val atRoot = path == root
+    val openPlaylist = playlists.firstOrNull { it.id == openId }
+
+    BackHandler(enabled = openPlaylist != null) { openId = null }
+    BackHandler(enabled = openPlaylist == null && !atRoot) { rawPath = path.substringBeforeLast('/') }
+
+    ScrollAwareBox(onOpenSettings) {
+        if (openPlaylist != null) {
+            // ---------- Carpeta virtual abierta
+            val folderTracks = remember(openPlaylist, tracks) {
+                val byId = tracks.associateBy { it.id }
+                openPlaylist.trackIds.mapNotNull { byId[it] }
+            }
+            TrackCollection(
+                tracks = folderTracks,
+                currentId = current?.id,
+                viewMode = viewMode,
+                header = {
+                    Column {
+                        ScreenHeader(
+                            title = openPlaylist.name,
+                            subtitle = "Carpeta propia · ${folderTracks.size} pistas",
+                            onBack = { openId = null }
+                        )
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            BeroChip("Renombrar", selected = false, onClick = { renameId = openPlaylist.id })
+                            BeroChip("Eliminar carpeta", selected = false, onClick = {
+                                vm.deleteFolder(openPlaylist.id)
+                                openId = null
+                            })
+                        }
+                    }
+                },
+                emptyText = "Carpeta vacía. Mantén pulsada una canción y elige \"Añadir a carpeta\".",
+                onTrackMenu = { track -> onFolderTrackMenu(track, openPlaylist.id) },
+                onPlay = { index -> vm.playQueue(folderTracks, index) }
+            )
+        } else {
+            // ---------- Carpetas del sistema (+ las propias en la raiz)
+            val prefix = "$path/"
+            val (subfolders, here) = remember(tracks, path) {
+                val counts = java.util.TreeMap<String, Int>(String.CASE_INSENSITIVE_ORDER)
+                val direct = ArrayList<Track>()
+                for (t in tracks) {
+                    if (!t.path.startsWith(prefix)) continue
+                    val rest = t.path.removePrefix(prefix)
+                    val slash = rest.indexOf('/')
+                    if (slash < 0) {
+                        direct.add(t)
+                    } else {
+                        val name = rest.substring(0, slash)
+                        if (!FolderGuard.isBlockedName(name)) counts[name] = (counts[name] ?: 0) + 1
+                    }
+                }
+                counts.entries.map { it.key to it.value } to direct.toList()
+            }
+
+            val title = if (atRoot) "Carpetas" else path.substringAfterLast('/')
+            val subtitle = path.removePrefix(root).ifEmpty { "Memoria interna y carpetas propias" }
+
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+                item(key = "header") {
+                    ScreenHeader(
+                        title = title,
+                        subtitle = subtitle,
+                        onBack = if (atRoot) null else ({ rawPath = path.substringBeforeLast('/') })
                     )
-                    Spacer(Modifier.size(8.dp))
-                    Text(
-                        album.name,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "${album.artist} · ${album.tracks.size}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                }
+
+                if (atRoot) {
+                    item(key = "label_mine") { FolderSectionLabel("Mis carpetas") }
+                    item(key = "new_folder") {
+                        FolderRow(
+                            icon = Icons.Rounded.CreateNewFolder,
+                            name = "Nueva carpeta",
+                            subtitle = "Crea tu propia carpeta (playlist local)",
+                            modifier = Modifier.animateItem()
+                        ) { showCreate = true }
+                    }
+                    items(playlists, key = { "pl:${it.id}" }, contentType = { "playlist" }) { pl ->
+                        FolderRow(
+                            icon = Icons.Rounded.LibraryMusic,
+                            name = pl.name,
+                            subtitle = "${pl.trackIds.size} pistas",
+                            modifier = Modifier.animateItem()
+                        ) { openId = pl.id }
+                    }
+                    item(key = "label_storage") { FolderSectionLabel("Almacenamiento") }
+                }
+
+                if (subfolders.isEmpty() && here.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            "No hay audios en esta carpeta",
+                            modifier = Modifier.padding(32.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                items(subfolders, key = { "folder:${it.first}" }, contentType = { "folder" }) { (name, count) ->
+                    FolderRow(
+                        icon = Icons.Rounded.Folder,
+                        name = name,
+                        subtitle = "$count pistas",
+                        modifier = Modifier.animateItem()
+                    ) { rawPath = "$prefix$name" }
+                }
+                itemsIndexed(here, key = { _, t -> t.id }, contentType = { _, _ -> "track" }) { index, t ->
+                    TrackRow(
+                        track = t,
+                        isCurrent = t.id == current?.id,
+                        modifier = Modifier
+                            .animateItem()
+                            .staggeredAppear(index),
+                        onLongClick = { onTrackMenu(t) }
+                    ) { vm.playQueue(here, index) }
                 }
             }
         }
-    } else {
-        TrackList(
-            tracks = selected.tracks,
-            currentId = current?.id,
-            header = {
-                ScreenHeader(
-                    title = selected.name,
-                    subtitle = "${selected.artist} · ${selected.tracks.size} pistas",
-                    onBack = { selectedId = null }
-                )
+    }
+
+    if (showCreate) {
+        NameDialog(
+            title = "Nueva carpeta",
+            initial = "",
+            confirmLabel = "Crear",
+            onConfirm = { name ->
+                vm.createFolder(name)
+                showCreate = false
             },
-            onTrackMenu = onTrackMenu,
-            onPlay = { index -> vm.playQueue(selected.tracks, index) }
+            onDismiss = { showCreate = false }
+        )
+    }
+    renameId?.let { id ->
+        NameDialog(
+            title = "Renombrar carpeta",
+            initial = playlists.firstOrNull { it.id == id }?.name.orEmpty(),
+            confirmLabel = "Guardar",
+            onConfirm = { name ->
+                vm.renameFolder(id, name)
+                renameId = null
+            },
+            onDismiss = { renameId = null }
         )
     }
 }
 
-// ------------------------------------------------------------------------ CARPETAS
+@Composable
+private fun FolderSectionLabel(text: String) {
+    Text(
+        text.uppercase(),
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.5.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 4.dp)
+    )
+}
 
 @Composable
-fun FoldersScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings: () -> Unit) {
-    val tracks by vm.tracks.collectAsStateWithLifecycle()
-    val current by vm.currentTrack.collectAsStateWithLifecycle()
-    val root = vm.storageRoot
-
-    var rawPath by rememberSaveable { mutableStateOf(root) }
-    // Defensa extra: si la ruta sale de la raiz o es una carpeta bloqueada, se vuelve a la raiz.
-    val path = if (!rawPath.startsWith(root) || FolderGuard.isBlockedPath(rawPath)) root else rawPath
-    val atRoot = path == root
-
-    BackHandler(enabled = !atRoot) { rawPath = path.substringBeforeLast('/') }
-
-    val prefix = "$path/"
-    val (subfolders, here) = remember(tracks, path) {
-        val counts = java.util.TreeMap<String, Int>(String.CASE_INSENSITIVE_ORDER)
-        val direct = ArrayList<Track>()
-        for (t in tracks) {
-            if (!t.path.startsWith(prefix)) continue
-            val rest = t.path.removePrefix(prefix)
-            val slash = rest.indexOf('/')
-            if (slash < 0) {
-                direct.add(t)
-            } else {
-                val name = rest.substring(0, slash)
-                if (!FolderGuard.isBlockedName(name)) counts[name] = (counts[name] ?: 0) + 1
-            }
-        }
-        counts.entries.map { it.key to it.value } to direct.toList()
-    }
-
-    val title = if (atRoot) "Carpetas" else path.substringAfterLast('/')
-    val subtitle = path.removePrefix(root).ifEmpty { "Memoria interna" }
-
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item(key = "header") {
-            ScreenHeader(
-                title = title,
-                subtitle = subtitle,
-                onSettings = onOpenSettings,
-                onBack = if (atRoot) null else ({ rawPath = path.substringBeforeLast('/') })
+private fun FolderRow(
+    icon: ImageVector,
+    name: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .pressable(shape, 0.97f, onClick)
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                .padding(12.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                name,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-        }
-        if (subfolders.isEmpty() && here.isEmpty()) {
-            item(key = "empty") {
-                Text(
-                    "No hay audios en esta carpeta",
-                    modifier = Modifier.padding(32.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        items(subfolders, key = { "folder:${it.first}" }) { (name, count) ->
-            val shape = RoundedCornerShape(20.dp)
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 2.dp)
-                    .pressable(shape, 0.97f) { rawPath = "$prefix$name" }
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Rounded.Folder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
-                        .padding(12.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        name,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "$count pistas",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-        itemsIndexed(here, key = { _, t -> t.id }) { index, t ->
-            TrackRow(t, t.id == current?.id, onLongClick = { onTrackMenu(t) }) { vm.playQueue(here, index) }
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -249,13 +422,17 @@ fun FoldersScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSetting
 fun FavoritesScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings: () -> Unit) {
     val favs by vm.favoriteTracks.collectAsStateWithLifecycle()
     val current by vm.currentTrack.collectAsStateWithLifecycle()
+    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
 
-    TrackList(
-        tracks = favs,
-        currentId = current?.id,
-        header = { ScreenHeader("Favoritos", "${favs.size} canciones", onSettings = onOpenSettings) },
-        emptyText = "Aún no tienes favoritos. Toca el corazón en el reproductor.",
-        onTrackMenu = onTrackMenu,
-        onPlay = { index -> vm.playQueue(favs, index) }
-    )
+    ScrollAwareBox(onOpenSettings) {
+        TrackCollection(
+            tracks = favs,
+            currentId = current?.id,
+            viewMode = viewMode,
+            header = { ScreenHeader("Favoritos", "${favs.size} canciones") },
+            emptyText = "Aún no tienes favoritos. Toca el corazón en el reproductor.",
+            onTrackMenu = onTrackMenu,
+            onPlay = { index -> vm.playQueue(favs, index) }
+        )
+    }
 }

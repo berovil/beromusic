@@ -3,6 +3,7 @@ package com.example.bero.data
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,23 @@ enum class ThemeMode(val label: String) {
 
 enum class ShuffleMode { OFF, ON, SMART }
 
+/** Como se muestran las listas de canciones (pistas, favoritos, album y carpetas virtuales). */
+enum class ViewMode(val label: String) {
+    LIST("Lista"),
+    CAROUSEL("Carrusel"),
+    GRID_3("Cuadrícula 3×3"),
+    GRID_4("Cuadrícula 4×4"),
+}
+
+enum class VisualizerStyle(val label: String) {
+    BARS("Barras"),
+    WAVE("Onda"),
+    DOTS("Puntos"),
+    MIRROR("Espejo"),
+    PEAKS("Picos"),
+}
+
+/** Colores rapidos; el selector libre (rueda cromatica) guarda cualquier ARGB. */
 enum class AccentColor(val label: String, val color: Color) {
     PURPLE("Morado", Color(0xFF9B7BFF)),
     BLUE("Azul", Color(0xFF4C8DFF)),
@@ -29,15 +47,27 @@ class SettingsStore(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("bero_settings", Context.MODE_PRIVATE)
 
-    private val _themeMode = MutableStateFlow(
-        runCatching { ThemeMode.valueOf(prefs.getString("theme", "") ?: "") }.getOrDefault(ThemeMode.DARK)
-    )
+    private inline fun <reified E : Enum<E>> readEnum(key: String, default: E): E =
+        runCatching { enumValueOf<E>(prefs.getString(key, "") ?: "") }.getOrDefault(default)
+
+    private val _themeMode = MutableStateFlow(readEnum("theme", ThemeMode.DARK))
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
-    private val _accent = MutableStateFlow(
-        runCatching { AccentColor.valueOf(prefs.getString("accent", "") ?: "") }.getOrDefault(AccentColor.PURPLE)
+    // Migracion: antes se guardaba el NOMBRE del color; ahora se guarda el ARGB libre.
+    private val _accentArgb = MutableStateFlow(
+        if (prefs.contains("accent_argb")) {
+            prefs.getInt("accent_argb", AccentColor.PURPLE.color.toArgb())
+        } else {
+            readEnum("accent", AccentColor.PURPLE).color.toArgb()
+        }
     )
-    val accent: StateFlow<AccentColor> = _accent.asStateFlow()
+    val accentArgb: StateFlow<Int> = _accentArgb.asStateFlow()
+
+    private val _gradient = MutableStateFlow(prefs.getBoolean("gradient_bg", false))
+    val gradientBackground: StateFlow<Boolean> = _gradient.asStateFlow()
+
+    private val _viewMode = MutableStateFlow(readEnum("view_mode", ViewMode.LIST))
+    val viewMode: StateFlow<ViewMode> = _viewMode.asStateFlow()
 
     private val _minSeconds = MutableStateFlow(prefs.getInt("min_seconds", 15))
     val minSeconds: StateFlow<Int> = _minSeconds.asStateFlow()
@@ -45,12 +75,17 @@ class SettingsStore(context: Context) {
     private val _spectrogram = MutableStateFlow(prefs.getBoolean("spectrogram", true))
     val spectrogramEnabled: StateFlow<Boolean> = _spectrogram.asStateFlow()
 
+    private val _visualizerStyle = MutableStateFlow(readEnum("visualizer_style", VisualizerStyle.BARS))
+    val visualizerStyle: StateFlow<VisualizerStyle> = _visualizerStyle.asStateFlow()
+
     private val _spotifyClientId = MutableStateFlow(prefs.getString("spotify_client_id", "") ?: "")
     val spotifyClientId: StateFlow<String> = _spotifyClientId.asStateFlow()
 
-    private val _shuffleMode = MutableStateFlow(
-        runCatching { ShuffleMode.valueOf(prefs.getString("shuffle_mode", "") ?: "") }.getOrDefault(ShuffleMode.OFF)
-    )
+    /** Vacio = usar el esquema personalizado por defecto. Si no, una URL HTTPS que reenvia a la app. */
+    private val _spotifyRedirect = MutableStateFlow(prefs.getString("spotify_redirect", "") ?: "")
+    val spotifyRedirectUri: StateFlow<String> = _spotifyRedirect.asStateFlow()
+
+    private val _shuffleMode = MutableStateFlow(readEnum("shuffle_mode", ShuffleMode.OFF))
     val shuffleMode: StateFlow<ShuffleMode> = _shuffleMode.asStateFlow()
 
     fun setThemeMode(mode: ThemeMode) {
@@ -58,9 +93,19 @@ class SettingsStore(context: Context) {
         prefs.edit().putString("theme", mode.name).apply()
     }
 
-    fun setAccent(accent: AccentColor) {
-        _accent.value = accent
-        prefs.edit().putString("accent", accent.name).apply()
+    fun setAccentArgb(argb: Int) {
+        _accentArgb.value = argb
+        prefs.edit().putInt("accent_argb", argb).apply()
+    }
+
+    fun setGradientBackground(enabled: Boolean) {
+        _gradient.value = enabled
+        prefs.edit().putBoolean("gradient_bg", enabled).apply()
+    }
+
+    fun setViewMode(mode: ViewMode) {
+        _viewMode.value = mode
+        prefs.edit().putString("view_mode", mode.name).apply()
     }
 
     fun setMinSeconds(seconds: Int) {
@@ -73,10 +118,21 @@ class SettingsStore(context: Context) {
         prefs.edit().putBoolean("spectrogram", enabled).apply()
     }
 
+    fun setVisualizerStyle(style: VisualizerStyle) {
+        _visualizerStyle.value = style
+        prefs.edit().putString("visualizer_style", style.name).apply()
+    }
+
     fun setSpotifyClientId(id: String) {
         val clean = id.trim()
         _spotifyClientId.value = clean
         prefs.edit().putString("spotify_client_id", clean).apply()
+    }
+
+    fun setSpotifyRedirectUri(uri: String) {
+        val clean = uri.trim()
+        _spotifyRedirect.value = clean
+        prefs.edit().putString("spotify_redirect", clean).apply()
     }
 
     fun setShuffleMode(mode: ShuffleMode) {

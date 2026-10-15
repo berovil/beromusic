@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -62,6 +63,7 @@ import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.QueueEntry
 import com.example.bero.ui.QueueState
 import com.example.bero.ui.components.Artwork
+import com.example.bero.ui.components.BeroIconButton
 import com.example.bero.ui.components.pressable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -124,18 +126,34 @@ private fun QueueContent(
             .fillMaxHeight(0.88f)
             .navigationBarsPadding()
     ) {
-        Text(
-            "Fila de reproducción",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
-        )
-        Text(
-            "Mantén pulsada una canción y arrástrala para reordenarla",
-            fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.6f),
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp)
-        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Fila de reproducción",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+                Text(
+                    "Mantén pulsada una canción y arrástrala para reordenarla",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+            // Remezcla lo que queda por sonar (en Smart Shuffle vuelve a intercalar sugerencias).
+            BeroIconButton(
+                icon = Icons.Rounded.Shuffle,
+                contentDescription = "Mezclar la fila",
+                onClick = vm::reshuffleUpcoming,
+                accent = accent,
+                tint = Color.White
+            )
+        }
         Spacer(Modifier.height(8.dp))
 
         LazyColumn(

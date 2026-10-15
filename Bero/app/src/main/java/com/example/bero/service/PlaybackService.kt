@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -28,7 +29,15 @@ class PlaybackService : MediaSessionService() {
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
+        // Audio local: no hace falta precargar mucho. Buffers pequenos = menos memoria y menos GC.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(8_000, 15_000, 1_000, 2_000)
+            .setBackBuffer(0, false)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         val player = ExoPlayer.Builder(this)
+            .setLoadControl(loadControl)
             .setAudioAttributes(attributes, true) // gestiona audio focus
             .setHandleAudioBecomingNoisy(true)    // pausa al desconectar auriculares
             .setWakeMode(C.WAKE_MODE_LOCAL)       // evita que la CPU se duerma en segundo plano

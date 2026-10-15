@@ -16,10 +16,13 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.bero.data.AlbumItem
 import com.example.bero.data.EXTRA_SUGGESTED
+import com.example.bero.data.DownloadResult
 import com.example.bero.data.FavoritesStore
 import com.example.bero.data.LyricsRepository
 import com.example.bero.data.LyricsState
 import com.example.bero.data.MusicRepository
+import com.example.bero.data.Playlist
+import com.example.bero.data.PlaylistStore
 import com.example.bero.data.SaveTarget
 import com.example.bero.data.ScoredTrack
 import com.example.bero.data.SettingsStore
@@ -29,6 +32,7 @@ import com.example.bero.data.SmartShuffle
 import com.example.bero.data.Track
 import com.example.bero.data.TrackInfo
 import com.example.bero.service.PlaybackService
+import com.example.bero.spotify.SpotifyConfig
 import com.example.bero.spotify.SpotifyRepository
 import com.example.bero.spotify.SpotifyStatus
 import com.example.bero.spotify.SpotifySuggestion
@@ -80,6 +84,8 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     val settings = SettingsStore(ctx)
     val favorites = FavoritesStore(ctx)
+    private val playlistStore = PlaylistStore(ctx)
+    val playlists: StateFlow<List<Playlist>> = playlistStore.playlists
     private val spotify = SpotifyRepository(ctx)
     val storageRoot: String = Environment.getExternalStorageDirectory().absolutePath
 
@@ -204,7 +210,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     private val _externalSuggestions = MutableStateFlow<List<SpotifySuggestion>>(emptyList())
     val externalSuggestions: StateFlow<List<SpotifySuggestion>> = _externalSuggestions.asStateFlow()
 
-    private var taste: SpotifyTaste? = spotify.cachedTaste()
+    private var taste: SpotifyTaste? = null
     private var scoredPool: List<ScoredTrack> = emptyList()
     private var poolJob: Job? = null
 
@@ -236,7 +242,11 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         LyricsRepository.init(ctx)
         connect()
         loadLibrary()
-        if (spotify.isConnected()) refreshTaste(force = false, announce = false)
+        viewModelScope.launch {
+            playlistStore.load()
+            taste = withContext(Dispatchers.IO) { spotify.cachedTaste() }
+            if (spotify.isConnected()) refreshTaste(force = false, announce = false)
+        }
     }
 
     private fun connect() {
@@ -421,6 +431,9 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         if (c.hasPreviousMediaItem()) c.seekToPreviousMediaItem() else c.seekTo(0)
     }
 
+    /** Version sin argumentos de [previous] para poder pasarla como referencia de metodo (vm::skipPrevious). */
+    fun skipPrevious() = previous(forceTrack = false)
+
     fun seekTo(positionMs: Long) {
         controller?.seekTo(positionMs)
     }
@@ -501,6 +514,13 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                 refreshTaste(force = false, announce = true)
             }
         }
+    }
+
+    /** Boton "Mezclar" de la fila: remezcla lo que queda por sonar sin cambiar el modo de aleatorio. */
+    fun reshuffleUpcoming() {
+        val mode = if (shuffleMode.value == ShuffleMode.SMART) ShuffleMode.SMART else ShuffleMode.ON
+        reorderUpcoming(mode)
+        toast("Fila mezclada")
     }
 
     /** Reordena SOLO lo que viene despues de la pista actual: la reproduccion actual no se interrumpe. */
@@ -634,7 +654,8 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         _spotifyStatus.value = SpotifyStatus.CONNECTING
-        _openUrl.tryEmit(spotify.buildAuthUri(clientId))
+        val redirect = settings.spotifyRedirectUri.value.ifBlank { SpotifyConfig.REDIRECT_URI }
+        _openUrl.tryEmit(spotify.buildAuthUri(clientId, redirect))
     }
 
     /** Llamado por MainActivity al volver del navegador con com.example.bero://spotify-callback?code=... */
@@ -714,11 +735,49 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         _lyricsVersion.value = _lyricsVersion.value + 1
     }
 
+    /** "Buscar letra en linea": descarga de LRCLIB y guarda el .lrc. Todo en corrutinas (IO), nunca en Main. */
+    fun searchLyricsOnline(track: Track) {
+        viewModelScope.launch {
+            toast("Buscando letra de \"${track.title}\"…")
+            when (LyricsRepository.downloadAndSave(track)) {
+                DownloadResult.SAVED_NEXT_TO_AUDIO -> toast("Letra descargada y guardada junto a la canción (.lrc)")
+                DownloadResult.SAVED_IN_APP ->
+                    toast("Letra descargada. Concede \"acceso a todos los archivos\" para guardarla junto al audio.")
+                DownloadResult.NOT_FOUND -> toast("No se encontró letra (o no hay conexión)")
+                DownloadResult.FAILED -> toast("Se encontró la letra pero no se pudo guardar")
+            }
+            _lyricsVersion.value = _lyricsVersion.value + 1
+        }
+    }
+
+    // ------------------------------------------------------------------ Carpetas virtuales
+
+    fun createFolder(name: String): String? {
+        val clean = name.trim()
+        if (clean.isEmpty()) return null
+        return playlistStore.create(clean)
+    }
+
+    fun renameFolder(id: String, name: String) {
+        if (name.isNotBlank()) playlistStore.rename(id, name)
+    }
+
+    fun deleteFolder(id: String) = playlistStore.delete(id)
+
+    fun addToFolder(folderId: String, track: Track) {
+        val name = playlists.value.firstOrNull { it.id == folderId }?.name ?: return
+        if (playlistStore.addTrack(folderId, track.id)) toast("Añadida a \"$name\"")
+        else toast("Ya estaba en \"$name\"")
+    }
+
+    fun removeFromFolder(folderId: String, track: Track) = playlistStore.removeTrack(folderId, track.id)
+
     /** Tras borrar el archivo: se quita de la biblioteca, de favoritos y de la cola de reproduccion. */
     fun onTrackDeleted(track: Track) {
         allTracks.value = allTracks.value.filter { it.id != track.id }
         byId = byId - track.id
         if (track.id in favorites.ids.value) favorites.toggle(track.id)
+        playlistStore.removeTrackEverywhere(track.id)
         controller?.let { c ->
             for (i in c.mediaItemCount - 1 downTo 0) {
                 if (c.getMediaItemAt(i).mediaId == track.id.toString()) c.removeMediaItem(i)

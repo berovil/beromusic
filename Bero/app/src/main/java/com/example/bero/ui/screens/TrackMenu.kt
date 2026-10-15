@@ -13,9 +13,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,7 +56,10 @@ fun TrackMenuSheet(
     track: Track,
     onDismiss: () -> Unit,
     onInfo: () -> Unit,
+    onSearchLyrics: () -> Unit,
     onEditLrc: () -> Unit,
+    onAddToFolder: () -> Unit,
+    onRemoveFromFolder: (() -> Unit)?,
     onShare: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -61,6 +67,7 @@ fun TrackMenuSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             Modifier
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(bottom = 16.dp)
         ) {
@@ -84,7 +91,12 @@ fun TrackMenuSheet(
                 }
             }
             MenuAction(Icons.Rounded.Info, "Ver información", onInfo)
+            MenuAction(Icons.Rounded.CloudDownload, "Buscar letra en línea", onSearchLyrics)
             MenuAction(Icons.Rounded.Edit, "Editar letra (LRC)", onEditLrc)
+            MenuAction(Icons.Rounded.CreateNewFolder, "Añadir a carpeta", onAddToFolder)
+            if (onRemoveFromFolder != null) {
+                MenuAction(Icons.Rounded.RemoveCircleOutline, "Quitar de esta carpeta", onRemoveFromFolder)
+            }
             MenuAction(Icons.Rounded.Share, "Compartir", onShare)
             MenuAction(Icons.Rounded.Delete, "Eliminar", onDelete, destructive = true)
         }

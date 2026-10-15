@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,9 +41,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,11 +54,14 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.bero.data.AccentColor
 import com.example.bero.data.ThemeMode
+import com.example.bero.data.ViewMode
 import com.example.bero.spotify.SpotifyConfig
 import com.example.bero.spotify.SpotifyStatus
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.BeroButton
+import com.example.bero.ui.theme.appBackground
 import com.example.bero.ui.components.BeroChip
+import com.example.bero.ui.components.ColorPickerDialog
 import com.example.bero.ui.components.GlassCard
 import com.example.bero.ui.components.ScreenHeader
 import com.example.bero.ui.components.pressable
@@ -64,7 +70,12 @@ import com.example.bero.ui.components.pressable
 fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val mode by vm.settings.themeMode.collectAsStateWithLifecycle()
-    val accent by vm.settings.accent.collectAsStateWithLifecycle()
+    val accentArgb by vm.settings.accentArgb.collectAsStateWithLifecycle()
+    val gradient by vm.settings.gradientBackground.collectAsStateWithLifecycle()
+    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
+    val redirect by vm.settings.spotifyRedirectUri.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboardManager.current
+    var showPicker by remember { mutableStateOf(false) }
     val minSeconds by vm.settings.minSeconds.collectAsStateWithLifecycle()
     val scanning by vm.isScanning.collectAsStateWithLifecycle()
     val total by vm.totalCount.collectAsStateWithLifecycle()
@@ -79,7 +90,7 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .appBackground()
             // Absorbe toques para que nada llegue a la pantalla de atras.
             .pointerInput(Unit) { detectTapGestures { } }
             .statusBarsPadding()
@@ -104,7 +115,7 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // ------------------------------------------------ Color de acento
+            // ------------------------------------------------ Color de acento (selector libre)
             GlassCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Color de acento")
                 Row(
@@ -112,11 +123,11 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     AccentColor.entries.forEach { a ->
-                        val selected = a == accent
+                        val selected = accentArgb == a.color.toArgb()
                         Box(
                             Modifier
                                 .size(46.dp)
-                                .pressable(CircleShape, 0.85f) { vm.settings.setAccent(a) }
+                                .pressable(CircleShape, 0.85f) { vm.settings.setAccentArgb(a.color.toArgb()) }
                                 .background(a.color, CircleShape)
                                 .then(
                                     if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
@@ -128,6 +139,61 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                                 Icon(Icons.Rounded.Check, a.label, tint = Color.Black.copy(alpha = 0.7f))
                             }
                         }
+                    }
+                    // Circulo cromatico: cualquier color
+                    val isCustom = AccentColor.entries.none { it.color.toArgb() == accentArgb }
+                    Box(
+                        Modifier
+                            .size(46.dp)
+                            .pressable(CircleShape, 0.85f) { showPicker = true }
+                            .background(Brush.sweepGradient(List(7) { Color.hsv(it * 60f, 1f, 1f) }), CircleShape)
+                            .then(
+                                if (isCustom) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                else Modifier
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Colorize, "Selector de color libre", tint = Color.White)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Toca el círculo cromático para elegir cualquier color. La app ajusta el contraste automáticamente.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // ------------------------------------------------ Fondo con degradado
+            GlassCard(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        SectionTitle("Fondo con degradado")
+                        Text(
+                            "Un degradado sutil basado en tu color en el fondo de la app, con contraste cuidado.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = gradient, onCheckedChange = { vm.settings.setGradientBackground(it) })
+                }
+            }
+
+            // ------------------------------------------------ Vista de listas
+            GlassCard(Modifier.fillMaxWidth()) {
+                SectionTitle("Vista de las listas")
+                Text(
+                    "Se aplica a Pistas, Favoritos, el detalle de álbumes y tus carpetas propias.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ViewMode.entries.forEach { m ->
+                        BeroChip(m.label, selected = m == viewMode, onClick = { vm.settings.setViewMode(m) })
                     }
                 }
             }
@@ -184,8 +250,35 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = redirect,
+                    onValueChange = { vm.settings.setSpotifyRedirectUri(it) },
+                    label = { Text("Redirect URI HTTPS (opcional)") },
+                    placeholder = { Text("https://usuario.github.io/bero/callback.html") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                val effectiveRedirect = redirect.ifBlank { SpotifyConfig.REDIRECT_URI }
                 Text(
-                    "Redirect URI a registrar en el Dashboard de Spotify:\n${SpotifyConfig.REDIRECT_URI}",
+                    "Registra EXACTAMENTE esto en el Dashboard (Redirect URIs → Add → Save), sin espacios ni «/» final:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    effectiveRedirect,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(6.dp))
+                BeroChip("Copiar Redirect URI", selected = false, onClick = {
+                    clipboard.setText(AnnotatedString(effectiveRedirect))
+                    vm.showMessage("Redirect URI copiado")
+                })
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "«Invalid redirect URI» = no coincide con el Dashboard. «Insecure redirect URI» = Spotify rechaza el " +
+                        "esquema personalizado: publica docs/callback.html con GitHub Pages y pega aquí su URL HTTPS.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -275,6 +368,17 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (showPicker) {
+        ColorPickerDialog(
+            initial = Color(accentArgb),
+            onDismiss = { showPicker = false },
+            onConfirm = {
+                vm.settings.setAccentArgb(it.toArgb())
+                showPicker = false
+            }
+        )
     }
 }
 

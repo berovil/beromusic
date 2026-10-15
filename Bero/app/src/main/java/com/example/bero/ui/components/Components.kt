@@ -1,6 +1,10 @@
 package com.example.bero.ui.components
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -37,6 +41,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -55,6 +60,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -62,8 +68,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.bero.R
 import com.example.bero.data.ArtworkLoader
 import com.example.bero.data.Track
+import kotlinx.coroutines.delay
 
 fun formatTime(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)
@@ -210,7 +218,9 @@ fun BigPlayButton(
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription, tint = onAccent, modifier = Modifier.size(52.dp))
+        Crossfade(targetState = icon, animationSpec = tween(180), label = "playPauseIcon") { current ->
+            Icon(current, contentDescription, tint = onAccent, modifier = Modifier.size(52.dp))
+        }
     }
 }
 
@@ -277,6 +287,7 @@ fun GlassCard(
     )
 }
 
+/** Marca de Bero (B-nota + carita :D) sobre un degradado del color de acento. */
 @Composable
 fun BeroLogo(modifier: Modifier = Modifier) {
     val accent = MaterialTheme.colorScheme.primary
@@ -286,17 +297,11 @@ fun BeroLogo(modifier: Modifier = Modifier) {
         ),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val r = size.minDimension
-            drawCircle(Color.White.copy(alpha = 0.08f), r * 0.46f, center)
-            drawCircle(Color.White.copy(alpha = 0.10f), r * 0.32f, center)
-            drawCircle(Color.White.copy(alpha = 0.14f), r * 0.18f, center)
-        }
-        Icon(
-            Icons.Rounded.MusicNote,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.95f),
-            modifier = Modifier.fillMaxSize(0.42f)
+        Image(
+            painter = painterResource(R.drawable.ic_bero_mark),
+            contentDescription = "Bero",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(0.9f)
         )
     }
 }
@@ -378,10 +383,16 @@ fun ScreenHeader(
 }
 
 @Composable
-fun TrackRow(track: Track, isCurrent: Boolean, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+fun TrackRow(
+    track: Track,
+    isCurrent: Boolean,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val shape = RoundedCornerShape(20.dp)
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
             .longPressable(shape, 0.97f, onLongClick, onClick)
@@ -441,12 +452,37 @@ fun TrackList(
                 )
             }
         }
-        itemsIndexed(tracks, key = { _, t -> t.id }) { index, t ->
+        itemsIndexed(tracks, key = { _, t -> t.id }, contentType = { _, _ -> "track" }) { index, t ->
             TrackRow(
                 track = t,
                 isCurrent = t.id == currentId,
+                modifier = Modifier
+                    .animateItem()
+                    .staggeredAppear(index),
                 onLongClick = onTrackMenu?.let { menu -> { menu(t) } }
             ) { onPlay(index) }
         }
     }
 }
+
+
+/**
+ * Entrada suave (fundido + ligero desplazamiento) escalonada para los primeros elementos de una lista/cuadricula.
+ * Pasado [maxStaggered] no hace nada (cero coste al hacer scroll).
+ */
+fun Modifier.staggeredAppear(index: Int, maxStaggered: Int = 10): Modifier =
+    if (index >= maxStaggered) {
+        this
+    } else {
+        composed {
+            val progress = remember { Animatable(0f) }
+            LaunchedEffect(Unit) {
+                delay(index * 35L)
+                progress.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+            }
+            graphicsLayer {
+                alpha = progress.value
+                translationY = (1f - progress.value) * 24.dp.toPx()
+            }
+        }
+    }

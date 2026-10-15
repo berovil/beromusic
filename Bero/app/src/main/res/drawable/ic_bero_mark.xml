@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo de Bero: una "B" cuyo tallo es el de una nota musical, con el bucle superior como bandera
+     y el inferior como cabeza de la nota, y una carita feliz :D a su lado. Viewport 108x108 (zona segura 66x66). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Tallo de la B / de la nota -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M32,30 L32,76"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="7" />
+
+    <!-- Bucle superior: bandera de la nota -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M32,31 C56,26 60,47 34,50"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="7" />
+
+    <!-- Bucle inferior: cabeza de la nota -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,64 a11,9.5 0 1,0 22,0 a11,9.5 0 1,0 -22,0 z" />
+
+    <!-- Carita :D -->
+    <path
+        android:fillColor="#FFD54A"
+        android:pathData="M61,56 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0 z" />
+    <path
+        android:fillColor="#2A1B6B"
+        android:pathData="M67.5,52.5 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0 z" />
+    <path
+        android:fillColor="#2A1B6B"
+        android:pathData="M74.9,52.5 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0 z" />
+    <!-- Boca en forma de "D" -->
+    <path
+        android:fillColor="#2A1B6B"
+        android:pathData="M65.5,58 L78.5,58 A6.5,6.5 0 0 1 65.5,58 Z" />
+</vector>

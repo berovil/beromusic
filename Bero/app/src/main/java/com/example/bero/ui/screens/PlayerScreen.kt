@@ -1,13 +1,18 @@
 package com.example.bero.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +45,7 @@ import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LocalContentColor
@@ -82,8 +88,10 @@ import com.example.bero.ui.components.Artwork
 import com.example.bero.ui.components.BeroIconButton
 import com.example.bero.ui.components.BigPlayButton
 import com.example.bero.ui.components.SpectrumVisualizer
+import com.example.bero.ui.components.VisualizerStyleDialog
 import com.example.bero.ui.components.formatTime
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
  * PlayerScreen SOLO decide el modo y el fondo. Cada bloque (barra superior, caratula, espectro,
@@ -169,7 +177,7 @@ private fun ColumnScope.NormalModeContent(
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center
     ) {
-        ArtworkSwipe(vm, current)
+        ArtworkSwipe(vm, current, onSwipeUp = onOpenQueue)
     }
 
     val panelShape = RoundedCornerShape(28.dp)
@@ -181,8 +189,9 @@ private fun ColumnScope.NormalModeContent(
             .clip(panelShape)
             .background(Color.White.copy(alpha = 0.07f))
             .border(1.dp, Color.White.copy(alpha = 0.10f), panelShape)
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp)
     ) {
+        QueueHandle(onOpenQueue)
         SpectrumSection(vm, hasMic, onRequestMic)
         Text(
             current.title,
@@ -294,7 +303,7 @@ private fun PlayerTopBar(
         BeroIconButton(
             icon = Icons.Rounded.KeyboardArrowDown,
             contentDescription = "Minimizar",
-            onClick = { vm.collapsePlayer() },
+            onClick = vm::collapsePlayer,
             accent = accent,
             tint = Color.White
         )
@@ -327,53 +336,125 @@ private fun PlayerTopBar(
     }
 }
 
-/** SOLO la caratula responde a deslizar izquierda/derecha (siguiente/anterior). */
+/**
+ * Gestos SOLO sobre la caratula: izquierda/derecha = siguiente/anterior; deslizar ARRIBA = revelar la fila.
+ * Un unico detector con bloqueo de eje evita gestos cruzados.
+ */
 @Composable
-private fun ArtworkSwipe(vm: BeroViewModel, track: Track) {
+private fun ArtworkSwipe(vm: BeroViewModel, track: Track, onSwipeUp: () -> Unit) {
+    val latestSwipeUp by rememberUpdatedState(onSwipeUp)
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val side = minOf(maxWidth, maxHeight)
         val offsetX = remember { Animatable(0f) }
+        val offsetY = remember { Animatable(0f) }
         val scope = rememberCoroutineScope()
 
-        Artwork(
-            track = track,
-            corner = 32.dp,
-            px = 1024,
-            modifier = Modifier
+        Box(
+            Modifier
                 .size(side)
                 .graphicsLayer {
                     translationX = offsetX.value
+                    translationY = offsetY.value
                     rotationZ = offsetX.value / 60f
                 }
                 .pointerInput(Unit) {
-                    val threshold = 90.dp.toPx()
-                    var total = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { total = 0f },
+                    val hThreshold = 90.dp.toPx()
+                    val vThreshold = 80.dp.toPx()
+                    var totalX = 0f
+                    var totalY = 0f
+                    detectDragGestures(
+                        onDragStart = {
+                            totalX = 0f
+                            totalY = 0f
+                        },
                         onDragEnd = {
-                            val t = total
-                            total = 0f
+                            val tx = totalX
+                            val ty = totalY
+                            totalX = 0f
+                            totalY = 0f
                             scope.launch { offsetX.animateTo(0f, spring()) }
-                            if (t <= -threshold) vm.next()
-                            else if (t >= threshold) vm.previous(forceTrack = true)
+                            scope.launch { offsetY.animateTo(0f, spring()) }
+                            if (abs(tx) > abs(ty)) {
+                                if (tx <= -hThreshold) vm.next()
+                                else if (tx >= hThreshold) vm.previous(forceTrack = true)
+                            } else if (ty <= -vThreshold) {
+                                latestSwipeUp()
+                            }
                         },
                         onDragCancel = {
-                            total = 0f
+                            totalX = 0f
+                            totalY = 0f
                             scope.launch { offsetX.animateTo(0f, spring()) }
+                            scope.launch { offsetY.animateTo(0f, spring()) }
                         },
-                        onHorizontalDrag = { change, dragAmount ->
+                        onDrag = { change, dragAmount ->
                             change.consume()
-                            total += dragAmount
-                            scope.launch { offsetX.snapTo(offsetX.value + dragAmount * 0.7f) }
+                            totalX += dragAmount.x
+                            totalY += dragAmount.y
+                            if (abs(totalX) > abs(totalY)) {
+                                scope.launch { offsetX.snapTo(offsetX.value + dragAmount.x * 0.7f) }
+                            } else if (totalY < 0f) {
+                                scope.launch { offsetY.snapTo((offsetY.value + dragAmount.y * 0.4f).coerceAtMost(0f)) }
+                            }
                         }
                     )
                 }
+        ) {
+            // Al cambiar de cancion la caratula entra con fundido + ligero zoom.
+            AnimatedContent(
+                targetState = track,
+                contentKey = { it.id },
+                transitionSpec = {
+                    (fadeIn(tween(300)) + scaleIn(initialScale = 0.92f, animationSpec = tween(300))) togetherWith
+                        fadeOut(tween(180))
+                },
+                label = "artwork"
+            ) { t ->
+                Artwork(track = t, modifier = Modifier.fillMaxSize(), corner = 32.dp, px = 1024)
+            }
+        }
+    }
+}
+
+/** Asa visible: deslizar hacia arriba (o tocar) abre la fila de reproduccion. */
+@Composable
+private fun QueueHandle(onOpen: () -> Unit) {
+    val latest by rememberUpdatedState(onOpen)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(22.dp)
+            .pointerInput(Unit) { detectTapGestures { latest() } }
+            .pointerInput(Unit) {
+                val threshold = 28.dp.toPx()
+                var total = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragEnd = {
+                        if (total < -threshold) latest()
+                        total = 0f
+                    },
+                    onDragCancel = { total = 0f },
+                    onVerticalDrag = { change, dy ->
+                        change.consume()
+                        total += dy
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier
+                .size(width = 38.dp, height = 4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color.White.copy(alpha = 0.35f))
         )
     }
 }
 
 /**
  * Espectro: si el ajuste esta desactivado, NO se compone => no se crea el Visualizer ni su hilo.
+ * El boton de la esquina abre los ajustes especificos del visualizador (5 estilos).
  */
 @Composable
 private fun SpectrumSection(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> Unit) {
@@ -381,16 +462,41 @@ private fun SpectrumSection(vm: BeroViewModel, hasMic: Boolean, onRequestMic: ()
     if (!enabled) return
     val isPlaying by vm.isPlaying.collectAsStateWithLifecycle()
     val sessionId by AudioFx.sessionId.collectAsStateWithLifecycle()
-    SpectrumVisualizer(
-        sessionId = sessionId,
-        isPlaying = isPlaying,
-        hasPermission = hasMic,
-        onNeedPermission = onRequestMic,
-        modifier = Modifier
+    val style by vm.settings.visualizerStyle.collectAsStateWithLifecycle()
+    var showStyles by remember { mutableStateOf(false) }
+
+    Box(
+        Modifier
             .fillMaxWidth()
             .height(56.dp)
-    )
+    ) {
+        SpectrumVisualizer(
+            sessionId = sessionId,
+            isPlaying = isPlaying,
+            hasPermission = hasMic,
+            style = style,
+            onNeedPermission = onRequestMic,
+            modifier = Modifier.fillMaxSize()
+        )
+        BeroIconButton(
+            icon = Icons.Rounded.Tune,
+            contentDescription = "Estilo del espectrograma",
+            onClick = { showStyles = true },
+            modifier = Modifier.align(Alignment.TopEnd),
+            size = 30.dp,
+            iconSize = 16.dp,
+            tint = Color.White.copy(alpha = 0.7f)
+        )
+    }
     Spacer(Modifier.height(12.dp))
+
+    if (showStyles) {
+        VisualizerStyleDialog(
+            current = style,
+            onSelect = { vm.settings.setVisualizerStyle(it) },
+            onDismiss = { showStyles = false }
+        )
+    }
 }
 
 /** Slider: unico composable que observa la posicion (4 Hz). La etiqueta de tiempo solo cambia 1 vez/segundo. */
@@ -460,7 +566,7 @@ private fun MainControls(vm: BeroViewModel, accent: Color) {
         BeroIconButton(
             icon = Icons.Rounded.SkipPrevious,
             contentDescription = "Anterior",
-            onClick = { vm.previous(forceTrack = false) },
+            onClick = vm::skipPrevious,
             size = 68.dp,
             iconSize = 40.dp,
             accent = accent,
@@ -470,12 +576,12 @@ private fun MainControls(vm: BeroViewModel, accent: Color) {
             icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
             contentDescription = if (isPlaying) "Pausar" else "Reproducir",
             accent = accent,
-            onClick = { vm.togglePlay() }
+            onClick = vm::togglePlay
         )
         BeroIconButton(
             icon = Icons.Rounded.SkipNext,
             contentDescription = "Siguiente",
-            onClick = { vm.next() },
+            onClick = vm::next,
             size = 68.dp,
             iconSize = 40.dp,
             accent = accent,
@@ -508,7 +614,7 @@ private fun SecondaryControls(vm: BeroViewModel, track: Track, accent: Color) {
             BeroIconButton(
                 icon = if (shuffle == ShuffleMode.SMART) Icons.Rounded.AutoAwesome else Icons.Rounded.Shuffle,
                 contentDescription = "Aleatorio",
-                onClick = { vm.cycleShuffle() },
+                onClick = vm::cycleShuffle,
                 onLongClick = { shuffleMenu = true },
                 active = shuffle != ShuffleMode.OFF,
                 accent = accent,
@@ -541,7 +647,7 @@ private fun SecondaryControls(vm: BeroViewModel, track: Track, accent: Color) {
         BeroIconButton(
             icon = if (repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             contentDescription = "Repetir",
-            onClick = { vm.cycleRepeat() },
+            onClick = vm::cycleRepeat,
             active = repeat != Player.REPEAT_MODE_OFF,
             accent = accent,
             tint = dim
@@ -549,7 +655,7 @@ private fun SecondaryControls(vm: BeroViewModel, track: Track, accent: Color) {
         BeroIconButton(
             icon = Icons.Rounded.Lyrics,
             contentDescription = "Letras",
-            onClick = { vm.toggleLyrics() },
+            onClick = vm::toggleLyrics,
             accent = accent,
             tint = dim
         )
