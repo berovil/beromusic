@@ -36,7 +36,7 @@ import kotlin.math.max
  *    fase de DIBUJO; ni este composable ni PlayerScreen se recomponen.
  *  - Sin audio y con las barras ya caidas, el bucle de frames se detiene.
  *  - Al pasar la app a segundo plano se pausa la captura del Visualizer (ON_STOP) y se reanuda en ON_START.
- * Siempre se pinta en blanco translucido sobre el fondo oscuro del reproductor: nunca se camufla.
+ * Usa el color principal del tema (aclarado por la pantalla para que contraste con el fondo oscuro).
  */
 @Composable
 fun SpectrumVisualizer(
@@ -44,6 +44,7 @@ fun SpectrumVisualizer(
     isPlaying: Boolean,
     hasPermission: Boolean,
     style: VisualizerStyle,
+    color: Color,
     onNeedPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -78,6 +79,7 @@ fun SpectrumVisualizer(
 
     val display = remember { FloatArray(VisualizerEngine.BAR_COUNT) }
     val peaks = remember { FloatArray(VisualizerEngine.BAR_COUNT) }
+    val scratch = remember { SpectrumScratch() }
     var frame by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(engine, isPlaying, hasPermission) {
@@ -102,7 +104,7 @@ fun SpectrumVisualizer(
         Canvas(Modifier.fillMaxSize()) {
             @Suppress("UNUSED_VARIABLE")
             val drawTick = frame // lectura de estado en la fase de dibujo: invalida solo el draw
-            drawSpectrum(style, display, peaks, Color.White)
+            drawSpectrum(style, display, peaks, color, scratch)
         }
         if (!hasPermission) {
             Text(

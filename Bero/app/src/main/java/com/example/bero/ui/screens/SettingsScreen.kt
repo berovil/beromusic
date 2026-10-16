@@ -55,8 +55,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.bero.data.AccentColor
 import com.example.bero.data.ThemeMode
 import com.example.bero.data.ViewMode
-import com.example.bero.spotify.SpotifyConfig
-import com.example.bero.spotify.SpotifyStatus
+import com.example.bero.lastfm.LastFmConfig
+import com.example.bero.ui.LastFmStatus
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.BeroButton
 import com.example.bero.ui.theme.appBackground
@@ -73,7 +73,6 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
     val accentArgb by vm.settings.accentArgb.collectAsStateWithLifecycle()
     val gradient by vm.settings.gradientBackground.collectAsStateWithLifecycle()
     val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
-    val redirect by vm.settings.spotifyRedirectUri.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     var showPicker by remember { mutableStateOf(false) }
     val minSeconds by vm.settings.minSeconds.collectAsStateWithLifecycle()
@@ -81,8 +80,10 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
     val total by vm.totalCount.collectAsStateWithLifecycle()
     val visible by vm.tracks.collectAsStateWithLifecycle()
     val spectrogram by vm.settings.spectrogramEnabled.collectAsStateWithLifecycle()
-    val spotifyStatus by vm.spotifyStatus.collectAsStateWithLifecycle()
-    val clientId by vm.settings.spotifyClientId.collectAsStateWithLifecycle()
+    val lastFmKey by vm.settings.lastFmApiKey.collectAsStateWithLifecycle()
+    val lastFmStatus by vm.lastFmStatus.collectAsStateWithLifecycle()
+    val lastFmMessage by vm.lastFmMessage.collectAsStateWithLifecycle()
+    val columns by vm.settings.gridColumns.collectAsStateWithLifecycle()
 
     var allFilesGranted by remember { mutableStateOf(hasAllFilesAccess()) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { allFilesGranted = hasAllFilesAccess() }
@@ -183,7 +184,7 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
             GlassCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Vista de las listas")
                 Text(
-                    "Se aplica a Pistas, Favoritos, el detalle de álbumes y tus carpetas propias.",
+                    "Se aplica a Pistas, Favoritos, álbumes y tus carpetas propias. También puedes cambiarlo al instante con el icono de cuadrícula de la barra superior.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -196,6 +197,19 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                         BeroChip(m.label, selected = m == viewMode, onClick = { vm.settings.setViewMode(m) })
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (columns == 1) "Tamaño: lista (1 columna)" else "Tamaño: $columns columnas",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Slider(
+                    value = columns.toFloat(),
+                    onValueChange = { vm.settings.setGridColumns(Math.round(it)) },
+                    valueRange = 1f..6f,
+                    steps = 4,
+                    enabled = viewMode == ViewMode.GRID
+                )
             }
 
             // ------------------------------------------------ Filtro de duracion
@@ -231,74 +245,42 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // ------------------------------------------------ Spotify / Smart Shuffle
+            // ------------------------------------------------ Last.fm / Smart Shuffle
             GlassCard(Modifier.fillMaxWidth()) {
-                SectionTitle("Smart Shuffle · Spotify")
+                SectionTitle("Smart Shuffle · Last.fm")
                 Text(
-                    "Vincula tu cuenta (solo con Wi-Fi) para que Smart Shuffle conozca tus artistas y géneros " +
-                        "y te sugiera música nueva cada día. Spotify retiró /recommendations para apps nuevas, " +
-                        "así que las sugerencias salen de tu top y de búsquedas por género. Sin Spotify usa tus favoritos.",
+                    "Gratis y sin iniciar sesión: Smart Shuffle consulta Last.fm para buscar pistas y artistas similares " +
+                        "a partir de los metadatos de tu música local (tus favoritas y una muestra diaria) e intercala " +
+                        "en la fila las que tienes. Solo necesitas una API key gratuita.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
-                    value = clientId,
-                    onValueChange = { vm.settings.setSpotifyClientId(it) },
-                    label = { Text("Client ID de Spotify") },
+                    value = lastFmKey,
+                    onValueChange = vm::onLastFmKeyChanged,
+                    label = { Text("API key de Last.fm") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = redirect,
-                    onValueChange = { vm.settings.setSpotifyRedirectUri(it) },
-                    label = { Text("Redirect URI HTTPS (opcional)") },
-                    placeholder = { Text("https://usuario.github.io/bero/callback.html") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                val effectiveRedirect = redirect.ifBlank { SpotifyConfig.REDIRECT_URI }
                 Text(
-                    "Registra EXACTAMENTE esto en el Dashboard (Redirect URIs → Add → Save), sin espacios ni «/» final:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    effectiveRedirect,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(6.dp))
-                BeroChip("Copiar Redirect URI", selected = false, onClick = {
-                    clipboard.setText(AnnotatedString(effectiveRedirect))
-                    vm.showMessage("Redirect URI copiado")
-                })
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "«Invalid redirect URI» = no coincide con el Dashboard. «Insecure redirect URI» = Spotify rechaza el " +
-                        "esquema personalizado: publica docs/callback.html con GitHub Pages y pega aquí su URL HTTPS.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Estado: " + when (spotifyStatus) {
-                        SpotifyStatus.CONNECTED -> "conectado"
-                        SpotifyStatus.CONNECTING -> "esperando autorización…"
-                        SpotifyStatus.DISCONNECTED -> "sin conectar"
-                    },
+                    "Estado: " + when (lastFmStatus) {
+                        LastFmStatus.NO_KEY -> "sin API key (usa tus favoritos)"
+                        LastFmStatus.READY -> "lista"
+                        LastFmStatus.LOADING -> "consultando…"
+                        LastFmStatus.ERROR -> "error"
+                    } + (lastFmMessage?.let { " · $it" } ?: ""),
                     fontWeight = FontWeight.SemiBold
                 )
+                Spacer(Modifier.height(8.dp))
+                BeroChip("Obtener API key gratis", selected = false, onClick = {
+                    safeStart(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(LastFmConfig.SIGNUP_URL)))
+                })
                 Spacer(Modifier.height(12.dp))
-                if (spotifyStatus == SpotifyStatus.CONNECTED) {
-                    BeroButton("Actualizar sugerencias", onClick = { vm.refreshSpotify() })
-                    Spacer(Modifier.height(8.dp))
-                    BeroButton("Desconectar", onClick = { vm.disconnectSpotify() })
-                } else {
-                    BeroButton("Conectar con Spotify", onClick = { vm.connectSpotify() })
-                }
+                BeroButton("Probar conexión", onClick = { vm.testLastFm() })
+                Spacer(Modifier.height(8.dp))
+                BeroButton("Actualizar sugerencias", onClick = { vm.refreshLastFm() })
             }
 
             // ------------------------------------------------ Escaneo

@@ -2,6 +2,9 @@ package com.example.bero.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +39,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Pause
@@ -72,6 +77,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -158,6 +164,17 @@ private fun ColumnScope.NormalModeContent(
     onRequestMic: () -> Unit,
     onOpenQueue: () -> Unit,
 ) {
+    // Color del tema, aclarado hasta contrastar con el fondo oscuro del reproductor.
+    val spectrumColor = remember(accent) {
+        var c = accent
+        var i = 0
+        while (c.luminance() < 0.55f && i < 10) {
+            c = lerp(c, Color.White, 0.12f)
+            i++
+        }
+        c
+    }
+
     PlayerTopBar(
         vm = vm,
         title = "NOW PLAYING",
@@ -191,8 +208,8 @@ private fun ColumnScope.NormalModeContent(
             .border(1.dp, Color.White.copy(alpha = 0.10f), panelShape)
             .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp)
     ) {
-        QueueHandle(onOpenQueue)
-        SpectrumSection(vm, hasMic, onRequestMic)
+        PanelTopRow(vm, accent, onOpenQueue)
+        SpectrumSection(vm, hasMic, onRequestMic, spectrumColor)
         Text(
             current.title,
             fontSize = 26.sp,
@@ -416,79 +433,80 @@ private fun ArtworkSwipe(vm: BeroViewModel, track: Track, onSwipeUp: () -> Unit)
     }
 }
 
-/** Asa visible: deslizar hacia arriba (o tocar) abre la fila de reproduccion. */
-@Composable
-private fun QueueHandle(onOpen: () -> Unit) {
-    val latest by rememberUpdatedState(onOpen)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(22.dp)
-            .pointerInput(Unit) { detectTapGestures { latest() } }
-            .pointerInput(Unit) {
-                val threshold = 28.dp.toPx()
-                var total = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { total = 0f },
-                    onDragEnd = {
-                        if (total < -threshold) latest()
-                        total = 0f
-                    },
-                    onDragCancel = { total = 0f },
-                    onVerticalDrag = { change, dy ->
-                        change.consume()
-                        total += dy
-                    }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            Modifier
-                .size(width = 38.dp, height = 4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = 0.35f))
-        )
-    }
-}
-
 /**
- * Espectro: si el ajuste esta desactivado, NO se compone => no se crea el Visualizer ni su hilo.
- * El boton de la esquina abre los ajustes especificos del visualizador (5 estilos).
+ * Fila superior del panel de controles:
+ *  - IZQUIERDA: boton para ENCENDER/APAGAR el espectrograma al instante (apagado = el Visualizer ni se crea);
+ *  - CENTRO: asa; deslizar hacia arriba (o tocar) abre la fila de reproduccion;
+ *  - DERECHA: estilo del espectrograma (solo si esta encendido).
  */
 @Composable
-private fun SpectrumSection(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> Unit) {
+private fun PanelTopRow(vm: BeroViewModel, accent: Color, onOpenQueue: () -> Unit) {
     val enabled by vm.spectrogramEnabled.collectAsStateWithLifecycle()
-    if (!enabled) return
-    val isPlaying by vm.isPlaying.collectAsStateWithLifecycle()
-    val sessionId by AudioFx.sessionId.collectAsStateWithLifecycle()
     val style by vm.settings.visualizerStyle.collectAsStateWithLifecycle()
     var showStyles by remember { mutableStateOf(false) }
+    val latestOpen by rememberUpdatedState(onOpenQueue)
+    val dim = Color.White.copy(alpha = 0.75f)
 
-    Box(
+    Row(
         Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(36.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        SpectrumVisualizer(
-            sessionId = sessionId,
-            isPlaying = isPlaying,
-            hasPermission = hasMic,
-            style = style,
-            onNeedPermission = onRequestMic,
-            modifier = Modifier.fillMaxSize()
-        )
         BeroIconButton(
-            icon = Icons.Rounded.Tune,
-            contentDescription = "Estilo del espectrograma",
-            onClick = { showStyles = true },
-            modifier = Modifier.align(Alignment.TopEnd),
-            size = 30.dp,
-            iconSize = 16.dp,
-            tint = Color.White.copy(alpha = 0.7f)
+            icon = Icons.Rounded.GraphicEq,
+            contentDescription = if (enabled) "Apagar espectrograma" else "Encender espectrograma",
+            onClick = vm::toggleSpectrogram,
+            size = 34.dp,
+            iconSize = 20.dp,
+            active = enabled,
+            accent = accent,
+            tint = dim
         )
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .pointerInput(Unit) { detectTapGestures { latestOpen() } }
+                .pointerInput(Unit) {
+                    val threshold = 28.dp.toPx()
+                    var total = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { total = 0f },
+                        onDragEnd = {
+                            if (total < -threshold) latestOpen()
+                            total = 0f
+                        },
+                        onDragCancel = { total = 0f },
+                        onVerticalDrag = { change, dy ->
+                            change.consume()
+                            total += dy
+                        }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .size(width = 38.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = 0.35f))
+            )
+        }
+        if (enabled) {
+            BeroIconButton(
+                icon = Icons.Rounded.Tune,
+                contentDescription = "Estilo del espectrograma",
+                onClick = { showStyles = true },
+                size = 34.dp,
+                iconSize = 20.dp,
+                accent = accent,
+                tint = dim
+            )
+        } else {
+            Spacer(Modifier.size(34.dp))
+        }
     }
-    Spacer(Modifier.height(12.dp))
 
     if (showStyles) {
         VisualizerStyleDialog(
@@ -496,6 +514,38 @@ private fun SpectrumSection(vm: BeroViewModel, hasMic: Boolean, onRequestMic: ()
             onSelect = { vm.settings.setVisualizerStyle(it) },
             onDismiss = { showStyles = false }
         )
+    }
+}
+
+/**
+ * Espectro: si esta apagado, NO se compone => no se crea el Visualizer ni su hilo (cero consumo).
+ * Entra/sale con una animacion suave y usa el color principal del tema.
+ */
+@Composable
+private fun SpectrumSection(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> Unit, color: Color) {
+    val enabled by vm.spectrogramEnabled.collectAsStateWithLifecycle()
+    AnimatedVisibility(
+        visible = enabled,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut()
+    ) {
+        val isPlaying by vm.isPlaying.collectAsStateWithLifecycle()
+        val sessionId by AudioFx.sessionId.collectAsStateWithLifecycle()
+        val style by vm.settings.visualizerStyle.collectAsStateWithLifecycle()
+        Column {
+            SpectrumVisualizer(
+                sessionId = sessionId,
+                isPlaying = isPlaying,
+                hasPermission = hasMic,
+                style = style,
+                color = color,
+                onNeedPermission = onRequestMic,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            )
+            Spacer(Modifier.height(12.dp))
+        }
     }
 }
 
@@ -629,7 +679,7 @@ private fun SecondaryControls(vm: BeroViewModel, track: Track, accent: Color) {
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Smart Shuffle (Spotify)") },
+                    text = { Text("Smart Shuffle (Last.fm)") },
                     onClick = {
                         vm.setShuffleMode(ShuffleMode.SMART)
                         shuffleMenu = false

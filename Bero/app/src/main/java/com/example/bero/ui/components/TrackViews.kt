@@ -1,5 +1,7 @@
 package com.example.bero.ui.components
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,34 +40,44 @@ import com.example.bero.data.ViewMode
 import kotlin.math.absoluteValue
 
 /**
- * Una sola entrada para mostrar canciones segun el modo elegido en Ajustes:
- * lista, carrusel o cuadriculas (3x3 / 4x4). Todas usan `key` estable (id de pista) y `contentType`.
+ * Una sola entrada para mostrar canciones. [columns] = 1 es la lista normal; de 2 a 6 es una cuadricula adaptativa
+ * (el slider de la barra superior lo cambia en vivo); [ViewMode.CAROUSEL] muestra un carrusel.
+ * Todas usan `key` estable (id de pista) y `contentType`.
  */
 @Composable
 fun TrackCollection(
     tracks: List<Track>,
     currentId: Long?,
     viewMode: ViewMode,
+    columns: Int,
     emptyText: String,
     modifier: Modifier = Modifier,
+    topPadding: Dp = 0.dp,
     header: (@Composable () -> Unit)? = null,
     onTrackMenu: ((Track) -> Unit)? = null,
     onPlay: (Int) -> Unit,
 ) {
-    when (viewMode) {
-        ViewMode.LIST -> TrackList(
-            tracks = tracks,
-            currentId = currentId,
-            modifier = modifier,
-            header = header,
-            emptyText = emptyText,
-            onTrackMenu = onTrackMenu,
-            onPlay = onPlay
-        )
-
-        ViewMode.GRID_3 -> TrackGrid(3, tracks, currentId, emptyText, modifier, header, onTrackMenu, onPlay)
-        ViewMode.GRID_4 -> TrackGrid(4, tracks, currentId, emptyText, modifier, header, onTrackMenu, onPlay)
-        ViewMode.CAROUSEL -> TrackCarousel(tracks, currentId, emptyText, modifier, header, onTrackMenu, onPlay)
+    if (viewMode == ViewMode.CAROUSEL) {
+        TrackCarousel(tracks, currentId, emptyText, modifier, topPadding, header, onTrackMenu, onPlay)
+    } else {
+        // Lista <-> cuadricula: fundido suave. Entre 2..6 columnas NO hay cambio de composable:
+        // las celdas se recolocan solas con animateItem().
+        Crossfade(targetState = columns <= 1, animationSpec = tween(220), label = "listOrGrid") { asList ->
+            if (asList) {
+                TrackList(
+                    tracks = tracks,
+                    currentId = currentId,
+                    modifier = modifier,
+                    topPadding = topPadding,
+                    header = header,
+                    emptyText = emptyText,
+                    onTrackMenu = onTrackMenu,
+                    onPlay = onPlay
+                )
+            } else {
+                TrackGrid(columns, tracks, currentId, emptyText, modifier, topPadding, header, onTrackMenu, onPlay)
+            }
+        }
     }
 }
 
@@ -78,30 +90,28 @@ private fun TrackGrid(
     currentId: Long?,
     emptyText: String,
     modifier: Modifier,
+    topPadding: Dp,
     header: (@Composable () -> Unit)?,
     onTrackMenu: ((Track) -> Unit)?,
     onPlay: (Int) -> Unit,
 ) {
     val sidePadding = 14.dp
-    val spacing = 10.dp
-    val compact = columns >= 4
+    val spacing = if (columns >= 5) 6.dp else 10.dp
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         // GridCells.Adaptive con el ancho minimo calculado para que quepan EXACTAMENTE `columns` columnas
-        // (y mas si la pantalla es ancha / esta en horizontal): cuadricula ordenada y comoda en cualquier tamano.
+        // (y mas si la pantalla es ancha / esta en horizontal): ordenada y comoda en cualquier tamano.
         val minCell: Dp = ((maxWidth - sidePadding * 2 - spacing * (columns - 1)) / columns) - 0.5.dp
 
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minCell),
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = sidePadding, end = sidePadding, bottom = 24.dp),
+            contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = topPadding, bottom = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(spacing),
             verticalArrangement = Arrangement.spacedBy(spacing)
         ) {
             if (header != null) {
-                item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
-                    Box(Modifier.padding(horizontal = 0.dp)) { header() }
-                }
+                item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { header() }
             }
             if (tracks.isEmpty()) {
                 item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
@@ -118,7 +128,7 @@ private fun TrackGrid(
                 TrackGridCell(
                     track = track,
                     isCurrent = track.id == currentId,
-                    compact = compact,
+                    columns = columns,
                     modifier = Modifier
                         .animateItem()
                         .staggeredAppear(index, maxStaggered = columns * 3),
@@ -133,19 +143,22 @@ private fun TrackGrid(
 private fun TrackGridCell(
     track: Track,
     isCurrent: Boolean,
-    compact: Boolean,
+    columns: Int,
     modifier: Modifier,
     onLongClick: (() -> Unit)?,
     onClick: () -> Unit,
 ) {
-    val corner = if (compact) 14.dp else 20.dp
+    // Todo escala con el numero de columnas: caratulas mas pequenas => esquinas, textos y resolucion mas pequenos.
+    val corner = when (columns) { 2 -> 22.dp; 3 -> 18.dp; 4 -> 14.dp; 5 -> 12.dp; else -> 10.dp }
+    val titleSp = when (columns) { 2 -> 14.sp; 3 -> 12.sp; 4 -> 11.sp; 5 -> 10.sp; else -> 9.sp }
+    val px = when (columns) { 2 -> 420; 3 -> 320; 4 -> 240; 5 -> 200; else -> 160 }
     val shape = RoundedCornerShape(corner)
     val primary = MaterialTheme.colorScheme.primary
     Column(
         modifier
             .fillMaxWidth()
             .longPressable(shape, 0.94f, onLongClick, onClick)
-            .padding(4.dp)
+            .padding(3.dp)
     ) {
         Box {
             Artwork(
@@ -154,7 +167,7 @@ private fun TrackGridCell(
                     .fillMaxWidth()
                     .aspectRatio(1f),
                 corner = corner - 2.dp,
-                px = if (compact) 220 else 340
+                px = px
             )
             if (isCurrent) {
                 Box(
@@ -164,22 +177,24 @@ private fun TrackGridCell(
                 )
             }
         }
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
             track.title,
-            fontSize = if (compact) 11.sp else 13.sp,
+            fontSize = titleSp,
             fontWeight = FontWeight.SemiBold,
             color = if (isCurrent) primary else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Text(
-            track.artist,
-            fontSize = if (compact) 10.sp else 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        if (columns <= 5) {
+            Text(
+                track.artist,
+                fontSize = titleSp * 0.9f,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -191,11 +206,16 @@ private fun TrackCarousel(
     currentId: Long?,
     emptyText: String,
     modifier: Modifier,
+    topPadding: Dp,
     header: (@Composable () -> Unit)?,
     onTrackMenu: ((Track) -> Unit)?,
     onPlay: (Int) -> Unit,
 ) {
-    Column(modifier.fillMaxSize()) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .padding(top = topPadding)
+    ) {
         header?.invoke()
         if (tracks.isEmpty()) {
             Text(

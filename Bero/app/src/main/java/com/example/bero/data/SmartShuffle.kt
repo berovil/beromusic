@@ -14,7 +14,7 @@ class SmartProfile(
 
 /**
  * Logica pura del Smart Shuffle. Solo se pueden reproducir pistas LOCALES, asi que las recomendaciones
- * de Spotify se usan para puntuar la biblioteca del usuario: coincidencia exacta de cancion, artistas
+ * de Last.fm se usan para puntuar la biblioteca del usuario: coincidencia exacta de cancion, artistas
  * descubiertos, artistas favoritos y artistas de su top.
  */
 object SmartShuffle {
@@ -31,6 +31,9 @@ object SmartShuffle {
 
     fun key(artist: String, title: String): String = norm(artist) + "|" + norm(title)
 
+    /** Artista principal sin "feat." ni colaboradores (para consultar Last.fm). */
+    fun primaryArtist(artist: String): String = artist.split(separators).firstOrNull()?.trim().orEmpty()
+
     fun artistTokens(artist: String): List<String> =
         artist.split(separators).map { norm(it) }.filter { it.isNotEmpty() }
 
@@ -39,8 +42,8 @@ object SmartShuffle {
         val out = ArrayList<ScoredTrack>()
         for (t in library) {
             var s = 0
-            val tokens = artistTokens(t.artist)
-            if (key(t.artist, t.title) in profile.suggestionKeys) s += 6
+            val tokens = t.artistTokens
+            if (t.songKey in profile.suggestionKeys) s += 6
             if (tokens.any { it in profile.suggestionArtists }) s += 4
             if (tokens.any { it in profile.favoriteArtists }) s += 2
             if (tokens.any { it in profile.topArtists }) s += 1

@@ -8,15 +8,22 @@ import android.os.Build
 import android.util.LruCache
 import android.util.Size
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 /** Extrae la caratula incrustada con MediaMetadataRetriever (y usa el thumbnail del sistema como respaldo). */
 object ArtworkLoader {
-    private val cache = object : LruCache<String, Bitmap>(24 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(cacheKb()) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
     }
     private val missing = ConcurrentHashMap.newKeySet<String>()
+
+    /** Evita picos de CPU/memoria al hacer scroll rapido: como maximo 3 decodificaciones simultaneas. */
+    private val decodeGate = Semaphore(3)
+
+    private fun cacheKb(): Int = (Runtime.getRuntime().maxMemory() / 1024 / 8).toInt().coerceIn(8 * 1024, 64 * 1024)
 
     private fun key(track: Track, px: Int) = "${track.id}:$px"
 
@@ -27,6 +34,9 @@ object ArtworkLoader {
         cache.get(k)?.let { return@withContext it }
         if (missing.contains(k)) return@withContext null
 
+        decodeGate.acquire()
+        try {
+        ensureActive() // si el item ya salio de pantalla, no se decodifica
         var bitmap: Bitmap? = null
 
         // 1) Caratula incrustada en el archivo
@@ -56,6 +66,9 @@ object ArtworkLoader {
 
         if (bitmap != null) cache.put(k, bitmap) else missing.add(k)
         bitmap
+        } finally {
+            decodeGate.release()
+        }
     }
 
     private fun decode(bytes: ByteArray, target: Int): Bitmap? {

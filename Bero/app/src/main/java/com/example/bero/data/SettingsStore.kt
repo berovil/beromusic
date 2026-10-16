@@ -18,10 +18,9 @@ enum class ShuffleMode { OFF, ON, SMART }
 
 /** Como se muestran las listas de canciones (pistas, favoritos, album y carpetas virtuales). */
 enum class ViewMode(val label: String) {
-    LIST("Lista"),
+    /** 1 columna = lista; 2..6 = cuadricula (se ajusta con el slider de la barra superior). */
+    GRID("Lista / cuadrícula"),
     CAROUSEL("Carrusel"),
-    GRID_3("Cuadrícula 3×3"),
-    GRID_4("Cuadrícula 4×4"),
 }
 
 enum class VisualizerStyle(val label: String) {
@@ -66,8 +65,24 @@ class SettingsStore(context: Context) {
     private val _gradient = MutableStateFlow(prefs.getBoolean("gradient_bg", false))
     val gradientBackground: StateFlow<Boolean> = _gradient.asStateFlow()
 
-    private val _viewMode = MutableStateFlow(readEnum("view_mode", ViewMode.LIST))
+    // Migracion desde las versiones anteriores (LIST / GRID_3 / GRID_4 / CAROUSEL).
+    private val legacyView = prefs.getString("view_mode", "") ?: ""
+
+    private val _viewMode = MutableStateFlow(if (legacyView == "CAROUSEL") ViewMode.CAROUSEL else ViewMode.GRID)
     val viewMode: StateFlow<ViewMode> = _viewMode.asStateFlow()
+
+    private val _gridColumns = MutableStateFlow(
+        if (prefs.contains("grid_columns")) {
+            prefs.getInt("grid_columns", 1).coerceIn(1, 6)
+        } else {
+            when (legacyView) {
+                "GRID_3" -> 3
+                "GRID_4" -> 4
+                else -> 1
+            }
+        }
+    )
+    val gridColumns: StateFlow<Int> = _gridColumns.asStateFlow()
 
     private val _minSeconds = MutableStateFlow(prefs.getInt("min_seconds", 15))
     val minSeconds: StateFlow<Int> = _minSeconds.asStateFlow()
@@ -78,12 +93,9 @@ class SettingsStore(context: Context) {
     private val _visualizerStyle = MutableStateFlow(readEnum("visualizer_style", VisualizerStyle.BARS))
     val visualizerStyle: StateFlow<VisualizerStyle> = _visualizerStyle.asStateFlow()
 
-    private val _spotifyClientId = MutableStateFlow(prefs.getString("spotify_client_id", "") ?: "")
-    val spotifyClientId: StateFlow<String> = _spotifyClientId.asStateFlow()
-
-    /** Vacio = usar el esquema personalizado por defecto. Si no, una URL HTTPS que reenvia a la app. */
-    private val _spotifyRedirect = MutableStateFlow(prefs.getString("spotify_redirect", "") ?: "")
-    val spotifyRedirectUri: StateFlow<String> = _spotifyRedirect.asStateFlow()
+    /** API key GRATUITA de Last.fm (solo lectura). No hay login de usuario. */
+    private val _lastFmKey = MutableStateFlow(prefs.getString("lastfm_api_key", "") ?: "")
+    val lastFmApiKey: StateFlow<String> = _lastFmKey.asStateFlow()
 
     private val _shuffleMode = MutableStateFlow(readEnum("shuffle_mode", ShuffleMode.OFF))
     val shuffleMode: StateFlow<ShuffleMode> = _shuffleMode.asStateFlow()
@@ -108,6 +120,13 @@ class SettingsStore(context: Context) {
         prefs.edit().putString("view_mode", mode.name).apply()
     }
 
+    fun setGridColumns(columns: Int) {
+        val c = columns.coerceIn(1, 6)
+        if (c == _gridColumns.value) return
+        _gridColumns.value = c
+        prefs.edit().putInt("grid_columns", c).apply()
+    }
+
     fun setMinSeconds(seconds: Int) {
         _minSeconds.value = seconds
         prefs.edit().putInt("min_seconds", seconds).apply()
@@ -123,16 +142,10 @@ class SettingsStore(context: Context) {
         prefs.edit().putString("visualizer_style", style.name).apply()
     }
 
-    fun setSpotifyClientId(id: String) {
-        val clean = id.trim()
-        _spotifyClientId.value = clean
-        prefs.edit().putString("spotify_client_id", clean).apply()
-    }
-
-    fun setSpotifyRedirectUri(uri: String) {
-        val clean = uri.trim()
-        _spotifyRedirect.value = clean
-        prefs.edit().putString("spotify_redirect", clean).apply()
+    fun setLastFmApiKey(key: String) {
+        val clean = key.trim()
+        _lastFmKey.value = clean
+        prefs.edit().putString("lastfm_api_key", clean).apply()
     }
 
     fun setShuffleMode(mode: ShuffleMode) {

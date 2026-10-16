@@ -1,6 +1,5 @@
 package com.example.bero
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -22,7 +21,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) handleSpotifyRedirect(intent)
 
         setContent {
             val mode by vm.settings.themeMode.collectAsStateWithLifecycle()
@@ -46,21 +44,6 @@ class MainActivity : ComponentActivity() {
             BeroTheme(mode = mode, accent = Color(accentArgb), gradient = gradient) {
                 BeroApp(vm)
             }
-        }
-    }
-
-    // launchMode="singleTop": el navegador vuelve aqui con com.example.bero://spotify-callback?code=...
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleSpotifyRedirect(intent)
-    }
-
-    private fun handleSpotifyRedirect(intent: Intent?) {
-        val data = intent?.data ?: return
-        if (data.scheme == "com.example.bero" && data.host == "spotify-callback") {
-            intent.data = null // evita reprocesar el codigo al rotar la pantalla
-            vm.handleSpotifyRedirect(data)
         }
     }
 

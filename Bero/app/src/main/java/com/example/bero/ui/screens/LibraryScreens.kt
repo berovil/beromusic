@@ -55,12 +55,37 @@ import com.example.bero.data.Track
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.Artwork
 import com.example.bero.ui.components.BeroChip
-import com.example.bero.ui.components.ScreenHeader
-import com.example.bero.ui.components.ScrollAwareBox
+import com.example.bero.ui.components.GridControls
+import com.example.bero.ui.components.LibraryBarDefaults
+import com.example.bero.ui.components.LibraryScaffold
 import com.example.bero.ui.components.TrackCollection
 import com.example.bero.ui.components.TrackRow
+import com.example.bero.ui.components.filterByQuery
+import com.example.bero.ui.components.matchesQuery
 import com.example.bero.ui.components.pressable
+import com.example.bero.ui.components.rememberLibraryBarState
+import com.example.bero.ui.components.rememberSearchQuery
 import com.example.bero.ui.components.staggeredAppear
+import com.example.bero.data.ViewMode
+
+private val BarHeight = LibraryBarDefaults.Height
+
+/** Controles del slider de la barra superior, enlazados a los ajustes (persisten entre sesiones). */
+@Composable
+private fun rememberGridControls(vm: BeroViewModel): GridControls {
+    val columns by vm.settings.gridColumns.collectAsStateWithLifecycle()
+    val mode by vm.settings.viewMode.collectAsStateWithLifecycle()
+    return remember(columns, mode, vm) {
+        GridControls(
+            columns = columns,
+            carousel = mode == ViewMode.CAROUSEL,
+            onColumns = vm.settings::setGridColumns,
+            onCarousel = { carousel ->
+                vm.settings.setViewMode(if (carousel) ViewMode.CAROUSEL else ViewMode.GRID)
+            }
+        )
+    }
+}
 
 // ------------------------------------------------------------------------ PISTAS
 
@@ -69,25 +94,29 @@ fun TracksScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
     val tracks by vm.tracks.collectAsStateWithLifecycle()
     val current by vm.currentTrack.collectAsStateWithLifecycle()
     val total by vm.totalCount.collectAsStateWithLifecycle()
-    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
+    val controls = rememberGridControls(vm)
 
-    // El engranaje es flotante: se oculta al bajar por la lista y reaparece al subir un poco.
-    ScrollAwareBox(onOpenSettings) {
+    val bar = rememberLibraryBarState()
+    val query = rememberSearchQuery(bar)
+    val shown = remember(tracks, query) { tracks.filterByQuery(query) }
+
+    val subtitle = when {
+        query.isNotEmpty() -> "${shown.size} de ${tracks.size} canciones"
+        total > tracks.size -> "${tracks.size} canciones · ${total - tracks.size} ocultas por duración"
+        else -> "${tracks.size} canciones"
+    }
+
+    LibraryScaffold("Pistas", subtitle, bar, onOpenSettings, gridControls = controls) {
         TrackCollection(
-            tracks = tracks,
+            tracks = shown,
             currentId = current?.id,
-            viewMode = viewMode,
-            header = {
-                val subtitle = if (total > tracks.size) {
-                    "${tracks.size} canciones · ${total - tracks.size} ocultas por duración"
-                } else {
-                    "${tracks.size} canciones"
-                }
-                ScreenHeader("Pistas", subtitle)
-            },
-            emptyText = "No se encontró música. Revisa el filtro de duración en Ajustes o fuerza un escaneo.",
+            viewMode = controls.viewMode,
+            columns = controls.columns,
+            topPadding = BarHeight,
+            emptyText = if (query.isNotEmpty()) "Sin resultados para tu búsqueda."
+            else "No se encontró música. Revisa el filtro de duración en Ajustes o fuerza un escaneo.",
             onTrackMenu = onTrackMenu,
-            onPlay = { index -> vm.playQueue(tracks, index) }
+            onPlay = { index -> vm.playQueue(shown, index) }
         )
     }
 }
@@ -98,12 +127,33 @@ fun TracksScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
 fun AlbumsScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings: () -> Unit) {
     val albums by vm.albums.collectAsStateWithLifecycle()
     val current by vm.currentTrack.collectAsStateWithLifecycle()
-    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
+    val controls = rememberGridControls(vm)
     var selectedId by rememberSaveable { mutableStateOf<Long?>(null) }
 
-    BackHandler(enabled = selectedId != null) { selectedId = null }
+    val bar = rememberLibraryBarState()
+    val query = rememberSearchQuery(bar)
+    val selectedAlbum = albums.firstOrNull { it.id == selectedId }
 
-    ScrollAwareBox(onOpenSettings) {
+    BackHandler(enabled = selectedId != null) {
+        selectedId = null
+        bar.closeSearch()
+    }
+
+    val shownAlbums = remember(albums, query) {
+        if (query.isEmpty()) albums else albums.filter { matchesQuery("${it.name} ${it.artist}", query) }
+    }
+
+    LibraryScaffold(
+        title = selectedAlbum?.name ?: "Álbumes",
+        subtitle = selectedAlbum?.let { "${it.artist} · ${it.tracks.size} pistas" } ?: "${albums.size} álbumes",
+        state = bar,
+        onOpenSettings = onOpenSettings,
+        onBack = if (selectedId != null) ({
+            selectedId = null
+            bar.closeSearch()
+        }) else null,
+        gridControls = if (selectedId != null) controls else null
+    ) {
         // Transicion suave entre la cuadricula de albumes y el detalle.
         AnimatedContent(
             targetState = selectedId,
@@ -123,14 +173,11 @@ fun AlbumsScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(150.dp),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = BarHeight + 4.dp, bottom = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
-                        ScreenHeader("Álbumes", "${albums.size} álbumes")
-                    }
-                    items(albums, key = { it.id }, contentType = { "album" }) { album ->
+                    items(shownAlbums, key = { it.id }, contentType = { "album" }) { album ->
                         val shape = RoundedCornerShape(24.dp)
                         Column(
                             Modifier
@@ -165,20 +212,16 @@ fun AlbumsScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
                     }
                 }
             } else {
+                val shownTracks = remember(selected, query) { selected.tracks.filterByQuery(query) }
                 TrackCollection(
-                    tracks = selected.tracks,
+                    tracks = shownTracks,
                     currentId = current?.id,
-                    viewMode = viewMode,
-                    header = {
-                        ScreenHeader(
-                            title = selected.name,
-                            subtitle = "${selected.artist} · ${selected.tracks.size} pistas",
-                            onBack = { selectedId = null }
-                        )
-                    },
-                    emptyText = "Álbum vacío",
+                    viewMode = controls.viewMode,
+                    columns = controls.columns,
+                    topPadding = BarHeight,
+                    emptyText = "Sin resultados.",
                     onTrackMenu = onTrackMenu,
-                    onPlay = { index -> vm.playQueue(selected.tracks, index) }
+                    onPlay = { index -> vm.playQueue(shownTracks, index) }
                 )
             }
         }
@@ -197,13 +240,16 @@ fun FoldersScreen(
     val tracks by vm.tracks.collectAsStateWithLifecycle()
     val current by vm.currentTrack.collectAsStateWithLifecycle()
     val playlists by vm.playlists.collectAsStateWithLifecycle()
-    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
+    val controls = rememberGridControls(vm)
     val root = vm.storageRoot
 
     var rawPath by rememberSaveable { mutableStateOf(root) }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var renameId by remember { mutableStateOf<String?>(null) }
+
+    val bar = rememberLibraryBarState()
+    val query = rememberSearchQuery(bar)
 
     // Defensa extra: si la ruta sale de la raiz o es una carpeta bloqueada, se vuelve a la raiz.
     val path = if (!rawPath.startsWith(root) || FolderGuard.isBlockedPath(rawPath)) root else rawPath
@@ -213,44 +259,57 @@ fun FoldersScreen(
     BackHandler(enabled = openPlaylist != null) { openId = null }
     BackHandler(enabled = openPlaylist == null && !atRoot) { rawPath = path.substringBeforeLast('/') }
 
-    ScrollAwareBox(onOpenSettings) {
+    val canGoBack = openPlaylist != null || !atRoot
+    val goBack: () -> Unit = {
+        if (openPlaylist != null) openId = null else rawPath = path.substringBeforeLast('/')
+        bar.closeSearch()
+    }
+
+    LibraryScaffold(
+        title = openPlaylist?.name ?: if (atRoot) "Carpetas" else path.substringAfterLast('/'),
+        subtitle = when {
+            openPlaylist != null -> "Carpeta propia · ${openPlaylist.trackIds.size} pistas"
+            atRoot -> "Memoria interna y carpetas propias"
+            else -> path.removePrefix(root)
+        },
+        state = bar,
+        onOpenSettings = onOpenSettings,
+        onBack = if (canGoBack) goBack else null,
+        gridControls = if (openPlaylist != null) controls else null
+    ) {
         if (openPlaylist != null) {
             // ---------- Carpeta virtual abierta
-            val folderTracks = remember(openPlaylist, tracks) {
+            val folderTracks = remember(openPlaylist, tracks, query) {
                 val byId = tracks.associateBy { it.id }
-                openPlaylist.trackIds.mapNotNull { byId[it] }
+                openPlaylist.trackIds.mapNotNull { byId[it] }.filterByQuery(query)
             }
             TrackCollection(
                 tracks = folderTracks,
                 currentId = current?.id,
-                viewMode = viewMode,
+                viewMode = controls.viewMode,
+                columns = controls.columns,
+                topPadding = BarHeight,
                 header = {
-                    Column {
-                        ScreenHeader(
-                            title = openPlaylist.name,
-                            subtitle = "Carpeta propia · ${folderTracks.size} pistas",
-                            onBack = { openId = null }
-                        )
-                        Row(
-                            Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            BeroChip("Renombrar", selected = false, onClick = { renameId = openPlaylist.id })
-                            BeroChip("Eliminar carpeta", selected = false, onClick = {
-                                vm.deleteFolder(openPlaylist.id)
-                                openId = null
-                            })
-                        }
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        BeroChip("Renombrar", selected = false, onClick = { renameId = openPlaylist.id })
+                        BeroChip("Eliminar carpeta", selected = false, onClick = {
+                            vm.deleteFolder(openPlaylist.id)
+                            openId = null
+                        })
                     }
                 },
-                emptyText = "Carpeta vacía. Mantén pulsada una canción y elige \"Añadir a carpeta\".",
+                emptyText = if (query.isNotEmpty()) "Sin resultados."
+                else "Carpeta vacía. Mantén pulsada una canción y elige \"Añadir a carpeta\".",
                 onTrackMenu = { track -> onFolderTrackMenu(track, openPlaylist.id) },
                 onPlay = { index -> vm.playQueue(folderTracks, index) }
             )
         } else {
             // ---------- Carpetas del sistema (+ las propias en la raiz)
             val prefix = "$path/"
-            val (subfolders, here) = remember(tracks, path) {
+            val (subfolders, here) = remember(tracks, path, query) {
                 val counts = java.util.TreeMap<String, Int>(String.CASE_INSENSITIVE_ORDER)
                 val direct = ArrayList<Track>()
                 for (t in tracks) {
@@ -264,21 +323,19 @@ fun FoldersScreen(
                         if (!FolderGuard.isBlockedName(name)) counts[name] = (counts[name] ?: 0) + 1
                     }
                 }
-                counts.entries.map { it.key to it.value } to direct.toList()
+                val folders = counts.entries
+                    .filter { matchesQuery(it.key, query) }
+                    .map { it.key to it.value }
+                folders to direct.filterByQuery(query)
+            }
+            val shownPlaylists = remember(playlists, query) {
+                if (query.isEmpty()) playlists else playlists.filter { matchesQuery(it.name, query) }
             }
 
-            val title = if (atRoot) "Carpetas" else path.substringAfterLast('/')
-            val subtitle = path.removePrefix(root).ifEmpty { "Memoria interna y carpetas propias" }
-
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-                item(key = "header") {
-                    ScreenHeader(
-                        title = title,
-                        subtitle = subtitle,
-                        onBack = if (atRoot) null else ({ rawPath = path.substringBeforeLast('/') })
-                    )
-                }
-
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = BarHeight, bottom = 16.dp)
+            ) {
                 if (atRoot) {
                     item(key = "label_mine") { FolderSectionLabel("Mis carpetas") }
                     item(key = "new_folder") {
@@ -289,7 +346,7 @@ fun FoldersScreen(
                             modifier = Modifier.animateItem()
                         ) { showCreate = true }
                     }
-                    items(playlists, key = { "pl:${it.id}" }, contentType = { "playlist" }) { pl ->
+                    items(shownPlaylists, key = { "pl:${it.id}" }, contentType = { "playlist" }) { pl ->
                         FolderRow(
                             icon = Icons.Rounded.LibraryMusic,
                             name = pl.name,
@@ -303,7 +360,7 @@ fun FoldersScreen(
                 if (subfolders.isEmpty() && here.isEmpty()) {
                     item(key = "empty") {
                         Text(
-                            "No hay audios en esta carpeta",
+                            if (query.isNotEmpty()) "Sin resultados" else "No hay audios en esta carpeta",
                             modifier = Modifier.padding(32.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -315,7 +372,10 @@ fun FoldersScreen(
                         name = name,
                         subtitle = "$count pistas",
                         modifier = Modifier.animateItem()
-                    ) { rawPath = "$prefix$name" }
+                    ) {
+                        rawPath = "$prefix$name"
+                        bar.closeSearch()
+                    }
                 }
                 itemsIndexed(here, key = { _, t -> t.id }, contentType = { _, _ -> "track" }) { index, t ->
                     TrackRow(
@@ -422,17 +482,29 @@ private fun FolderRow(
 fun FavoritesScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings: () -> Unit) {
     val favs by vm.favoriteTracks.collectAsStateWithLifecycle()
     val current by vm.currentTrack.collectAsStateWithLifecycle()
-    val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
+    val controls = rememberGridControls(vm)
 
-    ScrollAwareBox(onOpenSettings) {
+    val bar = rememberLibraryBarState()
+    val query = rememberSearchQuery(bar)
+    val shown = remember(favs, query) { favs.filterByQuery(query) }
+
+    LibraryScaffold(
+        "Favoritos",
+        if (query.isNotEmpty()) "${shown.size} de ${favs.size} canciones" else "${favs.size} canciones",
+        bar,
+        onOpenSettings,
+        gridControls = controls
+    ) {
         TrackCollection(
-            tracks = favs,
+            tracks = shown,
             currentId = current?.id,
-            viewMode = viewMode,
-            header = { ScreenHeader("Favoritos", "${favs.size} canciones") },
-            emptyText = "Aún no tienes favoritos. Toca el corazón en el reproductor.",
+            viewMode = controls.viewMode,
+            columns = controls.columns,
+            topPadding = BarHeight,
+            emptyText = if (query.isNotEmpty()) "Sin resultados."
+            else "Aún no tienes favoritos. Toca el corazón en el reproductor.",
             onTrackMenu = onTrackMenu,
-            onPlay = { index -> vm.playQueue(favs, index) }
+            onPlay = { index -> vm.playQueue(shown, index) }
         )
     }
 }

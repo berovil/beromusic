@@ -32,11 +32,11 @@ import com.example.bero.data.SmartShuffle
 import com.example.bero.data.Track
 import com.example.bero.data.TrackInfo
 import com.example.bero.service.PlaybackService
-import com.example.bero.spotify.SpotifyConfig
-import com.example.bero.spotify.SpotifyRepository
-import com.example.bero.spotify.SpotifyStatus
-import com.example.bero.spotify.SpotifySuggestion
-import com.example.bero.spotify.SpotifyTaste
+import com.example.bero.lastfm.ExternalSuggestion
+import com.example.bero.lastfm.LastFmException
+import com.example.bero.lastfm.LastFmRepository
+import com.example.bero.lastfm.LastFmSeed
+import com.example.bero.lastfm.LastFmTaste
 import com.example.bero.util.NetworkUtil
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CancellationException
@@ -60,8 +60,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.random.Random
 
 /** Una fila de "A continuación". [key] es estable aunque la pista cambie de posicion (drag & drop). */
+enum class LastFmStatus { NO_KEY, READY, LOADING, ERROR }
+
 @Immutable
 data class QueueEntry(val key: String, val track: Track, val suggested: Boolean)
 
@@ -86,7 +89,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     val favorites = FavoritesStore(ctx)
     private val playlistStore = PlaylistStore(ctx)
     val playlists: StateFlow<List<Playlist>> = playlistStore.playlists
-    private val spotify = SpotifyRepository(ctx)
+    private val lastFm = LastFmRepository(ctx)
     val storageRoot: String = Environment.getExternalStorageDirectory().absolutePath
 
     // ------------------------------------------------------------------ Controlador Media3
@@ -199,18 +202,21 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LyricsState.Idle)
 
-    // ------------------------------------------------------------------ Spotify / Smart Shuffle
+    // ------------------------------------------------------------------ Last.fm / Smart Shuffle
 
-    private val _spotifyStatus = MutableStateFlow(
-        if (spotify.isConnected()) SpotifyStatus.CONNECTED else SpotifyStatus.DISCONNECTED
+    private val _lastFmStatus = MutableStateFlow(
+        if (settings.lastFmApiKey.value.isBlank()) LastFmStatus.NO_KEY else LastFmStatus.READY
     )
-    val spotifyStatus: StateFlow<SpotifyStatus> = _spotifyStatus.asStateFlow()
+    val lastFmStatus: StateFlow<LastFmStatus> = _lastFmStatus.asStateFlow()
 
-    /** Descubrimientos de Spotify que NO estan en tu biblioteca (no se pueden reproducir: solo abrir en Spotify). */
-    private val _externalSuggestions = MutableStateFlow<List<SpotifySuggestion>>(emptyList())
-    val externalSuggestions: StateFlow<List<SpotifySuggestion>> = _externalSuggestions.asStateFlow()
+    private val _lastFmMessage = MutableStateFlow<String?>(null)
+    val lastFmMessage: StateFlow<String?> = _lastFmMessage.asStateFlow()
 
-    private var taste: SpotifyTaste? = null
+    /** Pistas similares (segun Last.fm) que NO estan en tu biblioteca: no se pueden reproducir, solo abrir su ficha. */
+    private val _externalSuggestions = MutableStateFlow<List<ExternalSuggestion>>(emptyList())
+    val externalSuggestions: StateFlow<List<ExternalSuggestion>> = _externalSuggestions.asStateFlow()
+
+    private var taste: LastFmTaste? = null
     private var scoredPool: List<ScoredTrack> = emptyList()
     private var poolJob: Job? = null
 
@@ -244,8 +250,9 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         loadLibrary()
         viewModelScope.launch {
             playlistStore.load()
-            taste = withContext(Dispatchers.IO) { spotify.cachedTaste() }
-            if (spotify.isConnected()) refreshTaste(force = false, announce = false)
+            taste = withContext(Dispatchers.IO) { lastFm.cachedTaste() }
+            rebuildPool()
+            if (shuffleMode.value == ShuffleMode.SMART) refreshTaste(force = false, announce = false)
         }
     }
 
@@ -391,7 +398,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                 if (mode == ShuffleMode.OFF) {
                     c.setMediaItems(list.map { it.toMediaItem() }, safeIndex, 0L)
                 } else {
-                    // La pista tocada va primero; el resto, mezclado (como Spotify).
+                    // La pista tocada va primero; el resto, mezclado (como las apps de streaming).
                     val first = list[safeIndex]
                     val rest = list.filterIndexed { i, _ -> i != safeIndex }.shuffled()
                     c.setMediaItems((listOf(first) + rest).map { it.toMediaItem() }, 0, 0L)
@@ -447,6 +454,11 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
         }
+    }
+
+    /** Boton rapido del reproductor: enciende/apaga el espectrograma (apagado = sin Visualizer ni hilo). */
+    fun toggleSpectrogram() {
+        settings.setSpectrogramEnabled(!settings.spectrogramEnabled.value)
     }
 
     fun toggleLyrics() {
@@ -508,8 +520,8 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         settings.setShuffleMode(mode)
         reorderUpcoming(mode)
         if (mode == ShuffleMode.SMART) {
-            if (!spotify.isConnected()) {
-                toast("Smart Shuffle está usando tus favoritos. Conecta Spotify en Ajustes para sugerencias según tus gustos.")
+            if (settings.lastFmApiKey.value.isBlank()) {
+                toast("Smart Shuffle usa tus favoritos. Añade tu API key gratuita de Last.fm en Ajustes para sugerencias de pistas similares.")
             } else {
                 refreshTaste(force = false, announce = true)
             }
@@ -552,7 +564,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Intercala sugerencias cada ~4 pistas en lo que queda por sonar. Las sugerencias son pistas LOCALES
-     * puntuadas con tu perfil (Spotify + favoritos). Si ya estaban en la cola, se ADELANTAN con
+     * puntuadas con tu perfil (Last.fm + favoritos). Si ya estaban en la cola, se ADELANTAN con
      * moveMediaItem; si no, se insertan.
      */
     private fun topUpSuggestions() {
@@ -620,19 +632,21 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
             val favoriteArtists = library.filter { it.id in favIds }
                 .flatMap { SmartShuffle.artistTokens(it.artist) }.toSet()
             val t = taste
+            val similarTracks = t?.similarTracks.orEmpty()
             val profile = SmartProfile(
-                topArtists = t?.topArtists.orEmpty().flatMap { SmartShuffle.artistTokens(it) }.toSet(),
-                suggestionArtists = t?.suggestions.orEmpty().map { SmartShuffle.norm(it.artist) }.toSet(),
-                suggestionKeys = t?.suggestions.orEmpty().map { SmartShuffle.key(it.artist, it.title) }.toSet(),
+                topArtists = t?.seedArtists.orEmpty().flatMap { SmartShuffle.artistTokens(it) }.toSet(),
+                suggestionArtists = (t?.similarArtists.orEmpty() + similarTracks.map { it.artist })
+                    .flatMap { SmartShuffle.artistTokens(it) }.toSet(),
+                suggestionKeys = similarTracks.map { SmartShuffle.key(it.artist, it.title) }.toSet(),
                 favoriteArtists = favoriteArtists,
             )
             val scored = SmartShuffle.score(library, profile)
 
             if (t != null) {
-                val localKeys = library.map { SmartShuffle.key(it.artist, it.title) }.toHashSet()
-                _externalSuggestions.value = t.suggestions.filter {
-                    SmartShuffle.key(it.artist, it.title) !in localKeys
-                }
+                val localKeys = library.mapTo(HashSet(library.size * 2)) { it.songKey }
+                _externalSuggestions.value = similarTracks
+                    .filter { SmartShuffle.key(it.artist, it.title) !in localKeys }
+                    .take(40)
             }
             withContext(Dispatchers.Main) {
                 scoredPool = scored
@@ -641,82 +655,95 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ------------------------------------------------------------------ Spotify
+    // ------------------------------------------------------------------ Last.fm
 
-    fun connectSpotify() {
-        val clientId = settings.spotifyClientId.value
-        if (clientId.isBlank()) {
-            toast("Introduce primero tu Client ID de Spotify")
-            return
-        }
-        if (!NetworkUtil.isWifi(ctx)) {
-            toast("Conéctate a una red Wi-Fi para vincular tu cuenta de Spotify")
-            return
-        }
-        _spotifyStatus.value = SpotifyStatus.CONNECTING
-        val redirect = settings.spotifyRedirectUri.value.ifBlank { SpotifyConfig.REDIRECT_URI }
-        _openUrl.tryEmit(spotify.buildAuthUri(clientId, redirect))
+    fun onLastFmKeyChanged(key: String) {
+        settings.setLastFmApiKey(key)
+        _lastFmStatus.value = if (key.isBlank()) LastFmStatus.NO_KEY else LastFmStatus.READY
+        _lastFmMessage.value = null
     }
 
-    /** Llamado por MainActivity al volver del navegador con com.example.bero://spotify-callback?code=... */
-    fun handleSpotifyRedirect(uri: Uri) {
+    /** Comprueba la API key con una peticion minima y explica el motivo si falla. */
+    fun testLastFm() {
+        val key = settings.lastFmApiKey.value
+        if (key.isBlank()) {
+            toast("Pega primero tu API key de Last.fm")
+            return
+        }
         viewModelScope.launch {
-            try {
-                spotify.completeAuth(uri, settings.spotifyClientId.value)
-                _spotifyStatus.value = SpotifyStatus.CONNECTED
-                toast("Spotify conectado")
-                refreshTaste(force = true, announce = true)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _spotifyStatus.value =
-                    if (spotify.isConnected()) SpotifyStatus.CONNECTED else SpotifyStatus.DISCONNECTED
-                toast("No se pudo conectar con Spotify: ${e.message}")
+            _lastFmStatus.value = LastFmStatus.LOADING
+            val error = lastFm.testKey(key)
+            if (error == null) {
+                _lastFmStatus.value = LastFmStatus.READY
+                _lastFmMessage.value = "La API key funciona"
+                toast("Last.fm: la API key funciona")
+            } else {
+                _lastFmStatus.value = LastFmStatus.ERROR
+                _lastFmMessage.value = error
+                toast("Last.fm: $error")
             }
         }
     }
 
-    fun disconnectSpotify() {
-        spotify.disconnect()
-        taste = null
-        _externalSuggestions.value = emptyList()
-        _spotifyStatus.value = SpotifyStatus.DISCONNECTED
-        rebuildPool()
-        toast("Spotify desconectado")
-    }
+    fun refreshLastFm() = refreshTaste(force = true, announce = true)
 
-    fun refreshSpotify() = refreshTaste(force = true, announce = true)
-
-    fun openSuggestion(suggestion: SpotifySuggestion) {
+    fun openSuggestion(suggestion: ExternalSuggestion) {
         _openUrl.tryEmit(Uri.parse(suggestion.url))
     }
 
     private fun refreshTaste(force: Boolean, announce: Boolean) {
-        if (!spotify.isConnected()) return
-        val clientId = settings.spotifyClientId.value
-        if (clientId.isBlank()) return
+        val key = settings.lastFmApiKey.value
+        if (key.isBlank()) return
         viewModelScope.launch {
-            val cached = taste
-            val stale = force || cached == null || cached.dayKey != SpotifyRepository.dayKey()
-            if (!stale) {
-                rebuildPool()
+            if (!NetworkUtil.isOnline(ctx)) {
+                if (announce) toast("Sin conexión: se usan las últimas sugerencias guardadas")
                 return@launch
             }
-            if (!NetworkUtil.isWifi(ctx)) {
-                if (announce) toast("Sin Wi-Fi: se usan las últimas sugerencias guardadas")
-                rebuildPool()
-                return@launch
-            }
+            _lastFmStatus.value = LastFmStatus.LOADING
             try {
-                taste = spotify.loadTaste(clientId, force)
-                if (announce) toast("Sugerencias de Spotify actualizadas")
+                val (seeds, seedKey) = withContext(Dispatchers.Default) { buildSeeds() }
+                if (seeds.isEmpty()) {
+                    _lastFmStatus.value = LastFmStatus.READY
+                    if (announce) toast("Aún no hay canciones con artista conocido para usar de semilla")
+                    return@launch
+                }
+                taste = lastFm.loadTaste(key, seeds, seedKey, force)
+                _lastFmStatus.value = LastFmStatus.READY
+                _lastFmMessage.value = null
+                if (announce) toast("Sugerencias de Last.fm actualizadas")
                 rebuildPool()
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: LastFmException) {
+                val msg = lastFm.friendly(e)
+                _lastFmStatus.value = LastFmStatus.ERROR
+                _lastFmMessage.value = msg
+                if (announce) toast("Last.fm: $msg")
             } catch (e: Exception) {
-                if (announce) toast("Spotify: ${e.message}")
+                _lastFmStatus.value = LastFmStatus.ERROR
+                _lastFmMessage.value = e.message
+                if (announce) toast("Last.fm: ${e.message}")
             }
         }
+    }
+
+    /**
+     * Semillas = metadatos de TU musica local: tus favoritas + una muestra estable del dia (misma muestra todo el dia,
+     * asi la cache diaria sirve). Un artista aporta como maximo una semilla.
+     */
+    private fun buildSeeds(): Pair<List<LastFmSeed>, String> {
+        val library = allTracks.value.filter { it.artist != MusicRepository.UNKNOWN_ARTIST }
+        if (library.isEmpty()) return emptyList<LastFmSeed>() to ""
+        val favIds = favorites.ids.value
+        val random = Random(LastFmRepository.dayKey().hashCode())
+        val favs = library.filter { it.id in favIds }.shuffled(random).take(6)
+        val extras = library.filter { it.id !in favIds }.shuffled(random).take(8)
+        val seeds = (favs + extras)
+            .distinctBy { SmartShuffle.norm(SmartShuffle.primaryArtist(it.artist)) }
+            .take(8)
+            .map { LastFmSeed(SmartShuffle.primaryArtist(it.artist), it.title) }
+        val seedKey = seeds.joinToString("|") { "${it.artist}/${it.title}" }.hashCode().toString()
+        return seeds to seedKey
     }
 
     // ------------------------------------------------------------------ Menu contextual de pistas

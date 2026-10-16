@@ -48,7 +48,22 @@ import kotlin.math.sin
  * Cinco estilos del espectrograma. Todos usan el MISMO array de valores 0..1, asi que alternar entre
  * ellos es gratis (solo cambia la funcion de dibujo, no la captura).
  */
-fun DrawScope.drawSpectrum(style: VisualizerStyle, values: FloatArray, peaks: FloatArray, color: Color) {
+/** Objetos reutilizables entre frames: el estilo "Onda" dibuja a 60 fps sin crear Path ni Brush nuevos. */
+class SpectrumScratch {
+    val line = Path()
+    val fill = Path()
+    var brush: Brush? = null
+    var brushHeight = -1f
+    var brushColor = Color.Unspecified
+}
+
+fun DrawScope.drawSpectrum(
+    style: VisualizerStyle,
+    values: FloatArray,
+    peaks: FloatArray,
+    color: Color,
+    scratch: SpectrumScratch,
+) {
     val n = values.size
     if (n == 0) return
     val w = size.width
@@ -73,7 +88,8 @@ fun DrawScope.drawSpectrum(style: VisualizerStyle, values: FloatArray, peaks: Fl
 
         VisualizerStyle.WAVE -> {
             val step = w / (n - 1).coerceAtLeast(1)
-            val line = Path()
+            val line = scratch.line
+            line.rewind()
             var px = 0f
             var py = h - max(minH, values[0] * h)
             line.moveTo(px, py)
@@ -86,13 +102,20 @@ fun DrawScope.drawSpectrum(style: VisualizerStyle, values: FloatArray, peaks: Fl
             }
             line.lineTo(px, py)
 
-            val fill = Path().apply {
-                addPath(line)
-                lineTo(w, h)
-                lineTo(0f, h)
-                close()
+            val fill = scratch.fill
+            fill.rewind()
+            fill.addPath(line)
+            fill.lineTo(w, h)
+            fill.lineTo(0f, h)
+            fill.close()
+            var brush = scratch.brush
+            if (brush == null || scratch.brushHeight != h || scratch.brushColor != color) {
+                brush = Brush.verticalGradient(listOf(color.copy(alpha = 0.50f), color.copy(alpha = 0f)), 0f, h)
+                scratch.brush = brush
+                scratch.brushHeight = h
+                scratch.brushColor = color
             }
-            drawPath(fill, Brush.verticalGradient(listOf(color.copy(alpha = 0.50f), color.copy(alpha = 0f)), 0f, h))
+            drawPath(fill, brush)
             drawPath(
                 line,
                 color.copy(alpha = 0.95f),
@@ -186,6 +209,7 @@ fun VisualizerStyleDialog(
 
             VisualizerStyle.entries.forEach { style ->
                 val selected = style == current
+                val scratch = remember { SpectrumScratch() }
                 val rowShape = RoundedCornerShape(18.dp)
                 Row(
                     Modifier
@@ -212,7 +236,7 @@ fun VisualizerStyleDialog(
                             .width(110.dp)
                             .size(width = 110.dp, height = 40.dp)
                     ) {
-                        drawSpectrum(style, sample, samplePeaks, accent)
+                        drawSpectrum(style, sample, samplePeaks, accent, scratch)
                     }
                 }
             }

@@ -217,7 +217,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
     val current by vm.currentTrack.collectAsStateWithLifecycle()
     val isPlaying by vm.isPlaying.collectAsStateWithLifecycle()
 
-    // Mensajes de una sola vez y enlaces externos (Spotify) emitidos por el ViewModel
+    // Mensajes de una sola vez y enlaces externos (Last.fm) emitidos por el ViewModel
     LaunchedEffect(Unit) {
         vm.messages.collect { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() }
     }

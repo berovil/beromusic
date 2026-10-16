@@ -21,6 +21,13 @@ data class Track(
     val path: String,
     val trackNumber: Int,
 ) {
+    /** Clave normalizada (sin acentos ni mayusculas) calculada UNA vez al crear la pista: la busqueda es un simple `contains`. */
+    val searchKey: String = SmartShuffle.norm("$title $artist $album")
+
+    /** Cacheadas de forma perezosa: el Smart Shuffle las reutiliza en cada recalculo del perfil. */
+    val songKey: String by lazy(LazyThreadSafetyMode.PUBLICATION) { SmartShuffle.key(artist, title) }
+    val artistTokens: List<String> by lazy(LazyThreadSafetyMode.PUBLICATION) { SmartShuffle.artistTokens(artist) }
+
     val uri: Uri
         get() = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
 

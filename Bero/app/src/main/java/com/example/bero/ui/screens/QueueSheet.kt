@@ -58,7 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.bero.spotify.SpotifySuggestion
+import com.example.bero.lastfm.ExternalSuggestion
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.QueueEntry
 import com.example.bero.ui.QueueState
@@ -92,7 +92,7 @@ fun QueueSheet(vm: BeroViewModel, accent: Color, onDismiss: () -> Unit) {
 private fun QueueContent(
     vm: BeroViewModel,
     queue: QueueState,
-    external: List<SpotifySuggestion>,
+    external: List<ExternalSuggestion>,
     accent: Color,
 ) {
     val rowPx = with(LocalDensity.current) { RowHeight.toPx() }
@@ -219,16 +219,16 @@ private fun QueueContent(
             if (external.isNotEmpty()) {
                 item(key = "ext_header") {
                     Column {
-                        SectionLabel("Sugerencias de hoy en Spotify")
+                        SectionLabel("Sugerencias de Last.fm (similares a tu música)")
                         Text(
-                            "No están en tu biblioteca, así que no se pueden reproducir aquí. Tócalas para abrirlas en Spotify.",
+                            "No están en tu biblioteca, así que no se pueden reproducir aquí. Tócalas para abrir su ficha en Last.fm.",
                             fontSize = 12.sp,
                             color = Color.White.copy(alpha = 0.5f),
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp)
                         )
                     }
                 }
-                items(external.take(15), key = { "ext:${it.id}" }) { suggestion ->
+                items(external.take(15), key = { "ext:${it.artist}|${it.title}" }) { suggestion ->
                     ExternalRow(suggestion, accent) { vm.openSuggestion(suggestion) }
                 }
             }
@@ -337,7 +337,7 @@ private fun LazyItemScope.QueueRow(
 }
 
 @Composable
-private fun ExternalRow(suggestion: SpotifySuggestion, accent: Color, onOpen: () -> Unit) {
+private fun ExternalRow(suggestion: ExternalSuggestion, accent: Color, onOpen: () -> Unit) {
     val shape = RoundedCornerShape(18.dp)
     Row(
         Modifier
@@ -362,7 +362,7 @@ private fun ExternalRow(suggestion: SpotifySuggestion, accent: Color, onOpen: ()
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Icon(Icons.Rounded.OpenInNew, contentDescription = "Abrir en Spotify", tint = accent)
+        Icon(Icons.Rounded.OpenInNew, contentDescription = "Abrir en Last.fm", tint = accent)
     }
 }
 

@@ -32,7 +32,7 @@ import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.pressable
 import kotlin.math.abs
 
-/** Letras estilo Apple Music / Spotify: izquierda, grandes y gruesas; la linea actual brilla; tocar una linea hace seekTo. */
+/** Letras estilo Apple Music: izquierda, grandes y gruesas; la linea actual brilla; tocar una linea hace seekTo. */
 @Composable
 fun LyricsPanel(
     vm: BeroViewModel,

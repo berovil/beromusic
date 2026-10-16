@@ -432,12 +432,13 @@ fun TrackList(
     tracks: List<Track>,
     currentId: Long?,
     modifier: Modifier = Modifier,
+    topPadding: Dp = 0.dp,
     header: (@Composable () -> Unit)? = null,
     emptyText: String = "No hay canciones",
     onTrackMenu: ((Track) -> Unit)? = null,
     onPlay: (Int) -> Unit,
 ) {
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(top = topPadding, bottom = 16.dp)) {
         if (header != null) {
             item(key = "header") { header() }
         }
