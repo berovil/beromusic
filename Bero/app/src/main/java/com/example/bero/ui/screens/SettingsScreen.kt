@@ -249,9 +249,9 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
             GlassCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Smart Shuffle · Last.fm")
                 Text(
-                    "Gratis y sin iniciar sesión: Smart Shuffle consulta Last.fm para buscar pistas y artistas similares " +
-                        "a partir de los metadatos de tu música local (tus favoritas y una muestra diaria) e intercala " +
-                        "en la fila las que tienes. Solo necesitas una API key gratuita.",
+                    "Gratis y sin iniciar sesión: Last.fm analiza tus favoritas y los artistas de los que más música tienes " +
+                        "y recomienda en línea canciones y artistas NUEVOS (pestaña Descubrir, con vista previa de 30 s). " +
+                        "Smart Shuffle además intercala en la fila las parecidas que sí tienes. Solo necesitas una API key gratuita.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -22,9 +22,16 @@ object LastFmConfig {
     const val SIGNUP_URL = "https://www.last.fm/api/account/create"
 }
 
-/** Sugerencia de Last.fm que NO esta en la biblioteca local (no se puede reproducir: solo abrir su ficha). */
+/** Recomendacion en linea de Last.fm. [score] = afinidad acumulada con tus semillas (mayor = mas parecida a tu gusto). */
 @Immutable
-data class ExternalSuggestion(val title: String, val artist: String, val url: String)
+data class ExternalSuggestion(
+    val title: String,
+    val artist: String,
+    val url: String,
+    val score: Float = 0f,
+) {
+    val key: String get() = "${artist.lowercase(Locale.ROOT)}|${title.lowercase(Locale.ROOT)}"
+}
 
 data class LastFmSeed(val artist: String, val title: String)
 
@@ -46,16 +53,22 @@ class LastFmException(val code: Int, message: String) : IOException(message) {
 }
 
 /**
- * Last.fm (API publica de solo lectura): track.getSimilar y artist.getSimilar. Solo hace falta una API key
- * gratuita; no hay login de usuario ni suscripcion. Las semillas salen de los metadatos de la musica local.
+ * Last.fm (API publica de solo lectura). Solo hace falta una API key gratuita; no hay login de usuario.
+ *
+ * Para descubrir musica NUEVA a partir de tu biblioteca:
+ *  1) track.getSimilar de tus semillas (favoritas + tus artistas con mas canciones) -> pistas parecidas;
+ *  2) artist.getSimilar de esos artistas -> artistas parecidos; de los mejores se piden sus pistas mas populares
+ *     (artist.getTopTracks). Los puntajes (`match`) se acumulan entre semillas: lo que aparece en varias sube.
  */
 class LastFmRepository(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("bero_lastfm", Context.MODE_PRIVATE)
 
     companion object {
-        private const val K_TASTE = "taste_json"
+        private const val K_TASTE = "taste_json_v2"
         fun dayKey(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
     }
+
+    private class Acc(val title: String, val artist: String, val url: String, var score: Float)
 
     fun cachedTaste(): LastFmTaste? {
         val raw = prefs.getString(K_TASTE, null) ?: return null
@@ -67,7 +80,12 @@ class LastFmRepository(context: Context) {
                 similarTracks = o.getJSONArray("similarTracks").let { arr ->
                     (0 until arr.length()).map { i ->
                         val s = arr.getJSONObject(i)
-                        ExternalSuggestion(s.getString("title"), s.getString("artist"), s.getString("url"))
+                        ExternalSuggestion(
+                            s.getString("title"),
+                            s.getString("artist"),
+                            s.getString("url"),
+                            s.optDouble("score", 0.0).toFloat()
+                        )
                     }
                 },
                 dayKey = o.getString("day"),
@@ -91,7 +109,7 @@ class LastFmRepository(context: Context) {
     }
 
     /**
-     * Para cada semilla local pide pistas y artistas similares. Cache diaria: las "sugerencias de cada dia".
+     * Analiza tus gustos y construye las recomendaciones. Cache diaria ("sugerencias de cada dia").
      * Todo en Dispatchers.IO y cancelable; se respeta el limite de ~5 peticiones/segundo con una pausa.
      */
     suspend fun loadTaste(
@@ -106,11 +124,19 @@ class LastFmRepository(context: Context) {
             if (cached != null && cached.dayKey == today && cached.seedKey == seedKey) return@withContext cached
         }
 
-        val similarTracks = LinkedHashMap<String, ExternalSuggestion>()
-        val similarArtists = LinkedHashSet<String>()
+        val tracks = LinkedHashMap<String, Acc>()
+        val artistScores = LinkedHashMap<String, Float>()
         val seedArtists = LinkedHashSet<String>()
         var okCalls = 0
         var lastError: LastFmException? = null
+
+        fun addTrack(title: String, artist: String, url: String, score: Float) {
+            if (title.isEmpty() || artist.isEmpty()) return
+            val u = url.ifEmpty { "https://www.last.fm/search?q=" + enc("$artist $title") }
+            val key = "${artist.lowercase(Locale.ROOT)}|${title.lowercase(Locale.ROOT)}"
+            val acc = tracks[key]
+            if (acc == null) tracks[key] = Acc(title, artist, u, score) else acc.score += score
+        }
 
         for (seed in seeds) {
             ensureActive()
@@ -119,14 +145,15 @@ class LastFmRepository(context: Context) {
             try {
                 val json = call(
                     "track.getSimilar", apiKey,
-                    "artist" to seed.artist, "track" to seed.title, "autocorrect" to "1", "limit" to "25"
+                    "artist" to seed.artist, "track" to seed.title, "autocorrect" to "1", "limit" to "30"
                 )
                 for (t in json.items("similartracks", "track")) {
-                    val title = t.optString("name", "")
-                    val artist = t.optJSONObject("artist")?.optString("name", "") ?: ""
-                    if (title.isEmpty() || artist.isEmpty()) continue
-                    val url = t.optString("url", "").ifEmpty { "https://www.last.fm/search?q=" + enc("$artist $title") }
-                    similarTracks.putIfAbsent("$artist|$title".lowercase(Locale.ROOT), ExternalSuggestion(title, artist, url))
+                    addTrack(
+                        t.optString("name", ""),
+                        t.optJSONObject("artist")?.optString("name", "") ?: "",
+                        t.optString("url", ""),
+                        t.optString("match", "0").toFloatOrNull() ?: 0f
+                    )
                 }
                 okCalls++
             } catch (e: LastFmException) {
@@ -136,10 +163,12 @@ class LastFmRepository(context: Context) {
             delay(230)
 
             try {
-                val json = call("artist.getSimilar", apiKey, "artist" to seed.artist, "autocorrect" to "1", "limit" to "15")
+                val json = call("artist.getSimilar", apiKey, "artist" to seed.artist, "autocorrect" to "1", "limit" to "12")
                 for (a in json.items("similarartists", "artist")) {
                     val name = a.optString("name", "")
-                    if (name.isNotEmpty()) similarArtists.add(name)
+                    if (name.isEmpty()) continue
+                    val match = a.optString("match", "0").toFloatOrNull() ?: 0f
+                    artistScores[name] = (artistScores[name] ?: 0f) + match
                 }
                 okCalls++
             } catch (e: LastFmException) {
@@ -150,12 +179,40 @@ class LastFmRepository(context: Context) {
         }
 
         if (okCalls == 0 && lastError != null) throw lastError
+
+        // Pistas populares de los artistas parecidos mejor puntuados (descubre artistas nuevos, no solo canciones sueltas).
+        val seedNames = seedArtists.map { it.lowercase(Locale.ROOT) }.toSet()
+        val bestArtists = artistScores.entries
+            .filter { it.key.lowercase(Locale.ROOT) !in seedNames }
+            .sortedByDescending { it.value }
+            .take(8)
+        for ((name, score) in bestArtists) {
+            ensureActive()
+            try {
+                val json = call("artist.getTopTracks", apiKey, "artist" to name, "autocorrect" to "1", "limit" to "3")
+                for (t in json.items("toptracks", "track")) {
+                    addTrack(
+                        t.optString("name", ""),
+                        t.optJSONObject("artist")?.optString("name", "") ?: name,
+                        t.optString("url", ""),
+                        score * 0.6f
+                    )
+                }
+            } catch (e: LastFmException) {
+                if (e.fatal) throw e
+            }
+            delay(230)
+        }
+
         val taste = LastFmTaste(
-            seedArtists.toList(),
-            similarArtists.toList(),
-            similarTracks.values.toList(),
-            today,
-            seedKey
+            seedArtists = seedArtists.toList(),
+            similarArtists = artistScores.entries.sortedByDescending { it.value }.take(60).map { it.key },
+            similarTracks = tracks.values
+                .sortedByDescending { it.score }
+                .take(150)
+                .map { ExternalSuggestion(it.title, it.artist, it.url, it.score) },
+            dayKey = today,
+            seedKey = seedKey,
         )
         saveTaste(taste)
         taste
@@ -169,14 +226,16 @@ class LastFmRepository(context: Context) {
         o.put("similarArtists", JSONArray(t.similarArtists))
         o.put("similarTracks", JSONArray().apply {
             t.similarTracks.forEach { s ->
-                put(JSONObject().put("title", s.title).put("artist", s.artist).put("url", s.url))
+                put(
+                    JSONObject()
+                        .put("title", s.title)
+                        .put("artist", s.artist)
+                        .put("url", s.url)
+                        .put("score", s.score.toDouble())
+                )
             }
         })
         prefs.edit().putString(K_TASTE, o.toString()).apply()
-    }
-
-    fun clearCache() {
-        prefs.edit().remove(K_TASTE).apply()
     }
 
     fun friendly(e: LastFmException): String = when (e.code) {

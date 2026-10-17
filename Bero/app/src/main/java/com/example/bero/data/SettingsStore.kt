@@ -93,6 +93,10 @@ class SettingsStore(context: Context) {
     private val _visualizerStyle = MutableStateFlow(readEnum("visualizer_style", VisualizerStyle.BARS))
     val visualizerStyle: StateFlow<VisualizerStyle> = _visualizerStyle.asStateFlow()
 
+    /** true = en Descubrir solo se muestran artistas que NO tienes en tu biblioteca. */
+    private val _discoverNewOnly = MutableStateFlow(prefs.getBoolean("discover_new_only", true))
+    val discoverNewOnly: StateFlow<Boolean> = _discoverNewOnly.asStateFlow()
+
     /** API key GRATUITA de Last.fm (solo lectura). No hay login de usuario. */
     private val _lastFmKey = MutableStateFlow(prefs.getString("lastfm_api_key", "") ?: "")
     val lastFmApiKey: StateFlow<String> = _lastFmKey.asStateFlow()
@@ -140,6 +144,11 @@ class SettingsStore(context: Context) {
     fun setVisualizerStyle(style: VisualizerStyle) {
         _visualizerStyle.value = style
         prefs.edit().putString("visualizer_style", style.name).apply()
+    }
+
+    fun setDiscoverNewOnly(enabled: Boolean) {
+        _discoverNewOnly.value = enabled
+        prefs.edit().putBoolean("discover_new_only", enabled).apply()
     }
 
     fun setLastFmApiKey(key: String) {

@@ -47,6 +47,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -88,6 +89,7 @@ import com.example.bero.ui.components.pressable
 import com.example.bero.ui.screens.AlbumsScreen
 import com.example.bero.ui.screens.AddToFolderDialog
 import com.example.bero.ui.screens.DeleteConfirmDialog
+import com.example.bero.ui.screens.DiscoverScreen
 import com.example.bero.ui.screens.FavoritesScreen
 import com.example.bero.ui.screens.FoldersScreen
 import com.example.bero.ui.screens.LrcEditorScreen
@@ -102,6 +104,7 @@ enum class MainTab(val label: String, val icon: ImageVector) {
     Tracks("Pistas", Icons.Rounded.QueueMusic),
     Albums("Álbumes", Icons.Rounded.Album),
     Folders("Carpetas", Icons.Rounded.Folder),
+    Discover("Descubrir", Icons.Rounded.Explore),
     Favorites("Favoritos", Icons.Rounded.Favorite),
 }
 
@@ -308,6 +311,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
                             onTrackMenu = openMenu,
                             onFolderTrackMenu = openFolderMenu
                         ) { showSettings = true }
+                        MainTab.Discover -> DiscoverScreen(vm) { showSettings = true }
                         MainTab.Favorites -> FavoritesScreen(vm, onTrackMenu = openMenu) { showSettings = true }
                     }
                 }

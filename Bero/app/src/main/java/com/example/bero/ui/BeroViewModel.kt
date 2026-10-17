@@ -8,10 +8,12 @@ import androidx.compose.runtime.Immutable
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.bero.data.AlbumItem
@@ -32,11 +34,13 @@ import com.example.bero.data.SmartShuffle
 import com.example.bero.data.Track
 import com.example.bero.data.TrackInfo
 import com.example.bero.service.PlaybackService
+import com.example.bero.lastfm.DeezerRepository
 import com.example.bero.lastfm.ExternalSuggestion
 import com.example.bero.lastfm.LastFmException
 import com.example.bero.lastfm.LastFmRepository
 import com.example.bero.lastfm.LastFmSeed
 import com.example.bero.lastfm.LastFmTaste
+import com.example.bero.lastfm.PreviewInfo
 import com.example.bero.util.NetworkUtil
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CancellationException
@@ -64,6 +68,18 @@ import kotlin.random.Random
 
 /** Una fila de "A continuación". [key] es estable aunque la pista cambie de posicion (drag & drop). */
 enum class LastFmStatus { NO_KEY, READY, LOADING, ERROR }
+
+/** Recomendacion en linea que NO esta en tu biblioteca. [affinity] 1..100 = parecido con tu gusto. */
+@Immutable
+data class Recommendation(
+    val suggestion: ExternalSuggestion,
+    val artistInLibrary: Boolean,
+    val affinity: Int,
+)
+
+/** Estado de la vista previa (30 s) que se esta oyendo en Descubrir. */
+@Immutable
+data class PreviewState(val key: String? = null, val loading: Boolean = false)
 
 @Immutable
 data class QueueEntry(val key: String, val track: Track, val suggested: Boolean)
@@ -215,6 +231,33 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     /** Pistas similares (segun Last.fm) que NO estan en tu biblioteca: no se pueden reproducir, solo abrir su ficha. */
     private val _externalSuggestions = MutableStateFlow<List<ExternalSuggestion>>(emptyList())
     val externalSuggestions: StateFlow<List<ExternalSuggestion>> = _externalSuggestions.asStateFlow()
+
+    private val _allRecommendations = MutableStateFlow<List<Recommendation>>(emptyList())
+
+    /** Lo que ve la pestana Descubrir: ordenado por afinidad; "solo artistas nuevos" se aplica al instante. */
+    val recommendations: StateFlow<List<Recommendation>> =
+        combine(_allRecommendations, settings.discoverNewOnly) { all, onlyNew ->
+            if (onlyNew) all.filter { !it.artistInLibrary } else all
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _previewState = MutableStateFlow(PreviewState())
+    val previewState: StateFlow<PreviewState> = _previewState.asStateFlow()
+    private var previewPlayer: ExoPlayer? = null
+
+    private val previewListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            when (playbackState) {
+                Player.STATE_READY -> _previewState.value = _previewState.value.copy(loading = false)
+                Player.STATE_ENDED -> stopPreview()
+                else -> Unit
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            toast("No se pudo reproducir la vista previa")
+            stopPreview()
+        }
+    }
 
     private var taste: LastFmTaste? = null
     private var scoredPool: List<ScoredTrack> = emptyList()
@@ -391,6 +434,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         if (list.isEmpty()) return
         val action: () -> Unit = {
             val c = controller
+            stopPreview()
             if (c != null) {
                 val safeIndex = startIndex.coerceIn(0, list.lastIndex)
                 originalOrder = list.mapIndexed { i, t -> t.id.toString() to i }.toMap()
@@ -413,6 +457,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun togglePlay() {
+        stopPreview()
         val c = controller ?: return
         if (c.playWhenReady && c.playbackState != Player.STATE_ENDED && c.playbackState != Player.STATE_IDLE) {
             c.pause()
@@ -644,9 +689,20 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
             if (t != null) {
                 val localKeys = library.mapTo(HashSet(library.size * 2)) { it.songKey }
-                _externalSuggestions.value = similarTracks
+                val localArtists = library.flatMapTo(HashSet()) { it.artistTokens }
+                val maxScore = similarTracks.maxOfOrNull { it.score }?.takeIf { it > 0f } ?: 1f
+                val recs = similarTracks
                     .filter { SmartShuffle.key(it.artist, it.title) !in localKeys }
-                    .take(40)
+                    .map { s ->
+                        Recommendation(
+                            suggestion = s,
+                            artistInLibrary = SmartShuffle.artistTokens(s.artist).any { it in localArtists },
+                            affinity = ((s.score / maxScore) * 100f).toInt().coerceIn(1, 100),
+                        )
+                    }
+                    .sortedByDescending { it.affinity }
+                _allRecommendations.value = recs
+                _externalSuggestions.value = recs.take(40).map { it.suggestion }
             }
             withContext(Dispatchers.Main) {
                 scoredPool = scored
@@ -736,14 +792,77 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         if (library.isEmpty()) return emptyList<LastFmSeed>() to ""
         val favIds = favorites.ids.value
         val random = Random(LastFmRepository.dayKey().hashCode())
+
+        // Tu gusto = lo que marcaste como favorito + los artistas de los que mas musica tienes.
         val favs = library.filter { it.id in favIds }.shuffled(random).take(6)
-        val extras = library.filter { it.id !in favIds }.shuffled(random).take(8)
-        val seeds = (favs + extras)
+        val topArtistTracks = library
+            .groupBy { SmartShuffle.norm(SmartShuffle.primaryArtist(it.artist)) }
+            .values
+            .sortedByDescending { it.size }
+            .take(6)
+            .map { it.random(random) }
+        val extras = library.shuffled(random).take(2)
+
+        val seeds = (favs + topArtistTracks + extras)
             .distinctBy { SmartShuffle.norm(SmartShuffle.primaryArtist(it.artist)) }
-            .take(8)
+            .take(10)
             .map { LastFmSeed(SmartShuffle.primaryArtist(it.artist), it.title) }
         val seedKey = seeds.joinToString("|") { "${it.artist}/${it.title}" }.hashCode().toString()
         return seeds to seedKey
+    }
+
+    /** Pestana Descubrir: carga las recomendaciones (usa la cache del dia si existe). */
+    fun loadRecommendations() {
+        if (settings.lastFmApiKey.value.isBlank()) return
+        if (_allRecommendations.value.isNotEmpty()) return
+        refreshTaste(force = false, announce = false)
+    }
+
+    fun openLink(url: String) {
+        _openUrl.tryEmit(Uri.parse(url))
+    }
+
+    fun openYouTubeSearch(s: ExternalSuggestion) {
+        val q = java.net.URLEncoder.encode("${s.artist} ${s.title}", "UTF-8")
+        _openUrl.tryEmit(Uri.parse("https://www.youtube.com/results?search_query=$q"))
+    }
+
+    // ------------------------------------------------------------------ Vista previa de 30 s (Deezer)
+
+    suspend fun lookupPreview(s: ExternalSuggestion): PreviewInfo? = DeezerRepository.lookup(s.artist, s.title)
+
+    /** Reproduce/detiene la vista previa. Pausa tu musica mientras suena (el foco de audio lo gestiona ExoPlayer). */
+    fun togglePreview(suggestion: ExternalSuggestion, previewUrl: String) {
+        if (_previewState.value.key == suggestion.key) {
+            stopPreview()
+            return
+        }
+        stopPreview()
+        controller?.pause()
+        val attributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
+        val player = ExoPlayer.Builder(ctx)
+            .setAudioAttributes(attributes, true)
+            .setHandleAudioBecomingNoisy(true)
+            .build()
+        player.addListener(previewListener)
+        player.setMediaItem(MediaItem.fromUri(previewUrl))
+        player.prepare()
+        player.play()
+        previewPlayer = player
+        _previewState.value = PreviewState(suggestion.key, loading = true)
+    }
+
+    /** Libera por completo el reproductor de vistas previas (no deja nada en memoria). */
+    fun stopPreview() {
+        previewPlayer?.let {
+            it.removeListener(previewListener)
+            it.release()
+        }
+        previewPlayer = null
+        if (_previewState.value.key != null) _previewState.value = PreviewState()
     }
 
     // ------------------------------------------------------------------ Menu contextual de pistas
@@ -817,6 +936,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     fun showMessage(message: String) = toast(message)
 
     override fun onCleared() {
+        stopPreview()
         controller?.removeListener(playerListener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controller = null
