@@ -34,6 +34,13 @@ object RemoteArtLoader {
 
     fun peek(url: String): Bitmap? = cache.get(url)
 
+    fun trim(level: Int) {
+        when {
+            level >= 40 || level == 15 -> cache.evictAll()
+            level >= 20 || level == 10 -> cache.trimToSize(cache.maxSize() / 2)
+        }
+    }
+
     suspend fun load(url: String): Bitmap? = withContext(Dispatchers.IO) {
         cache.get(url)?.let { return@withContext it }
         gate.acquire()

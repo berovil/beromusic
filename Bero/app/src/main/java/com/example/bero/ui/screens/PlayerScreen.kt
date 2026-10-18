@@ -648,7 +648,7 @@ private fun SecondaryControls(vm: BeroViewModel, track: Track, accent: Color) {
     val shuffle by vm.shuffleMode.collectAsStateWithLifecycle()
     val repeat by vm.repeatMode.collectAsStateWithLifecycle()
     val eq by AudioFx.state.collectAsStateWithLifecycle()
-    val favIds by vm.favorites.ids.collectAsStateWithLifecycle()
+    val favState = vm.favorites.ids.collectAsStateWithLifecycle()
     var showEq by remember { mutableStateOf(false) }
     var shuffleMenu by remember { mutableStateOf(false) }
     val dim = Color.White.copy(alpha = 0.8f)
@@ -717,7 +717,8 @@ private fun SecondaryControls(vm: BeroViewModel, track: Track, accent: Color) {
             accent = accent,
             tint = dim
         )
-        val liked = track.id in favIds
+        // derivedStateOf: este boton solo se recompone si CAMBIA el estado de ESTA cancion, no con cualquier favorito.
+        val liked by remember(track.id) { derivedStateOf { track.id in favState.value } }
         BeroIconButton(
             icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             contentDescription = "Me gusta",

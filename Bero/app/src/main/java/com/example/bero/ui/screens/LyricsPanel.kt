@@ -89,7 +89,11 @@ private fun LyricLines(
         modifier = modifier,
         contentPadding = PaddingValues(start = 4.dp, end = 4.dp, top = 80.dp, bottom = 240.dp)
     ) {
-        itemsIndexed(lyrics.lines) { index, line ->
+        itemsIndexed(
+            lyrics.lines,
+            key = { index, _ -> index },
+            contentType = { _, _ -> "line" }
+        ) { index, line ->
             val isCurrent = index == current
             val dimAlpha = when {
                 !lyrics.synced -> 0.85f

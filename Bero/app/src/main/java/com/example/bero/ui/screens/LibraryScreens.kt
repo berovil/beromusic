@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -60,8 +61,12 @@ import com.example.bero.ui.components.LibraryBarDefaults
 import com.example.bero.ui.components.LibraryScaffold
 import com.example.bero.ui.components.TrackCollection
 import com.example.bero.ui.components.TrackRow
-import com.example.bero.ui.components.filterByQuery
+import com.example.bero.ui.components.filterAlbumsByQuery
+import com.example.bero.ui.components.rememberSearchResults
 import com.example.bero.ui.components.matchesQuery
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import com.example.bero.ui.components.pressable
 import com.example.bero.ui.components.rememberLibraryBarState
 import com.example.bero.ui.components.rememberSearchQuery
@@ -98,7 +103,7 @@ fun TracksScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
 
     val bar = rememberLibraryBarState()
     val query = rememberSearchQuery(bar)
-    val shown = remember(tracks, query) { tracks.filterByQuery(query) }
+    val shown = rememberSearchResults(tracks, query)
 
     val subtitle = when {
         query.isNotEmpty() -> "${shown.size} de ${tracks.size} canciones"
@@ -139,9 +144,7 @@ fun AlbumsScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
         bar.closeSearch()
     }
 
-    val shownAlbums = remember(albums, query) {
-        if (query.isEmpty()) albums else albums.filter { matchesQuery("${it.name} ${it.artist}", query) }
-    }
+    val shownAlbums = remember(albums, query) { albums.filterAlbumsByQuery(query) }
 
     LibraryScaffold(
         title = selectedAlbum?.name ?: "Álbumes",
@@ -212,7 +215,7 @@ fun AlbumsScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
                     }
                 }
             } else {
-                val shownTracks = remember(selected, query) { selected.tracks.filterByQuery(query) }
+                val shownTracks = rememberSearchResults(selected.tracks, query)
                 TrackCollection(
                     tracks = shownTracks,
                     currentId = current?.id,
@@ -279,10 +282,13 @@ fun FoldersScreen(
     ) {
         if (openPlaylist != null) {
             // ---------- Carpeta virtual abierta
-            val folderTracks = remember(openPlaylist, tracks, query) {
-                val byId = tracks.associateBy { it.id }
-                openPlaylist.trackIds.mapNotNull { byId[it] }.filterByQuery(query)
+            val folderBase by produceState(emptyList<Track>(), openPlaylist, tracks) {
+                value = withContext(Dispatchers.Default) {
+                    val byId = tracks.associateBy { it.id }
+                    openPlaylist.trackIds.mapNotNull { byId[it] }
+                }
             }
+            val folderTracks = rememberSearchResults(folderBase, query)
             TrackCollection(
                 tracks = folderTracks,
                 currentId = current?.id,
@@ -309,24 +315,12 @@ fun FoldersScreen(
         } else {
             // ---------- Carpetas del sistema (+ las propias en la raiz)
             val prefix = "$path/"
-            val (subfolders, here) = remember(tracks, path, query) {
-                val counts = java.util.TreeMap<String, Int>(String.CASE_INSENSITIVE_ORDER)
-                val direct = ArrayList<Track>()
-                for (t in tracks) {
-                    if (!t.path.startsWith(prefix)) continue
-                    val rest = t.path.removePrefix(prefix)
-                    val slash = rest.indexOf('/')
-                    if (slash < 0) {
-                        direct.add(t)
-                    } else {
-                        val name = rest.substring(0, slash)
-                        if (!FolderGuard.isBlockedName(name)) counts[name] = (counts[name] ?: 0) + 1
-                    }
-                }
-                val folders = counts.entries
-                    .filter { matchesQuery(it.key, query) }
-                    .map { it.key to it.value }
-                folders to direct.filterByQuery(query)
+            val listing by produceState<FolderListing?>(null, tracks, path) {
+                value = computeFolderListing(tracks, prefix)
+            }
+            val here = rememberSearchResults(listing?.here ?: emptyList(), query)
+            val subfolders = remember(listing, query) {
+                listing?.folders.orEmpty().filter { matchesQuery(it.first, query) }
             }
             val shownPlaylists = remember(playlists, query) {
                 if (query.isEmpty()) playlists else playlists.filter { matchesQuery(it.name, query) }
@@ -357,7 +351,7 @@ fun FoldersScreen(
                     item(key = "label_storage") { FolderSectionLabel("Almacenamiento") }
                 }
 
-                if (subfolders.isEmpty() && here.isEmpty()) {
+                if (listing != null && subfolders.isEmpty() && here.isEmpty()) {
                     item(key = "empty") {
                         Text(
                             if (query.isNotEmpty()) "Sin resultados" else "No hay audios en esta carpeta",
@@ -486,7 +480,7 @@ fun FavoritesScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSetti
 
     val bar = rememberLibraryBarState()
     val query = rememberSearchQuery(bar)
-    val shown = remember(favs, query) { favs.filterByQuery(query) }
+    val shown = rememberSearchResults(favs, query)
 
     LibraryScaffold(
         "Favoritos",
@@ -508,3 +502,27 @@ fun FavoritesScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSetti
         )
     }
 }
+
+/** Contenido de una carpeta fisica: subcarpetas (con su numero de pistas) y las pistas que contiene directamente. */
+private class FolderListing(val folders: List<Pair<String, Int>>, val here: List<Track>)
+
+/** Recorre TODA la biblioteca: va en Dispatchers.Default y es cancelable (cada 256 pistas comprueba cancelacion). */
+private suspend fun computeFolderListing(tracks: List<Track>, prefix: String): FolderListing =
+    withContext(Dispatchers.Default) {
+        val counts = java.util.TreeMap<String, Int>(String.CASE_INSENSITIVE_ORDER)
+        val direct = ArrayList<Track>()
+        var n = 0
+        for (t in tracks) {
+            if ((++n and 0xFF) == 0) ensureActive()
+            if (!t.path.startsWith(prefix)) continue
+            val rest = t.path.removePrefix(prefix)
+            val slash = rest.indexOf('/')
+            if (slash < 0) {
+                direct.add(t)
+            } else {
+                val name = rest.substring(0, slash)
+                if (!FolderGuard.isBlockedName(name)) counts[name] = (counts[name] ?: 0) + 1
+            }
+        }
+        FolderListing(counts.entries.map { it.key to it.value }, direct)
+    }

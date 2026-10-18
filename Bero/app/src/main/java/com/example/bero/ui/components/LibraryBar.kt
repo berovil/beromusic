@@ -62,7 +62,12 @@ import androidx.compose.ui.unit.sp
 import com.example.bero.data.SmartShuffle
 import com.example.bero.data.Track
 import com.example.bero.data.ViewMode
+import androidx.compose.runtime.produceState
+import com.example.bero.data.AlbumItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 object LibraryBarDefaults {
@@ -121,6 +126,70 @@ fun List<Track>.filterByQuery(query: String): List<Track> {
     if (query.isEmpty()) return this
     val tokens = query.split(' ').filter { it.isNotEmpty() }
     return filter { t -> tokens.all { it in t.searchKey } }
+}
+
+fun List<AlbumItem>.filterAlbumsByQuery(query: String): List<AlbumItem> {
+    if (query.isEmpty()) return this
+    val tokens = query.split(' ').filter { it.isNotEmpty() }
+    return filter { a -> tokens.all { it in a.searchKey } }
+}
+
+/**
+ * Buscador de pistas con CACHE y filtrado INCREMENTAL:
+ *  - corre en Dispatchers.Default y es cancelable (si el usuario sigue escribiendo, el calculo anterior se aborta);
+ *  - guarda los ultimos 24 resultados: borrar letras o repetir una busqueda es instantaneo;
+ *  - si "abc" ya esta en cache, "abcd" se filtra SOLO entre los resultados de "abc" (nunca entre todas las pistas).
+ */
+class TrackSearcher {
+    private val lock = Any()
+    private var source: List<Track>? = null
+    private val cache = object : LinkedHashMap<String, List<Track>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Track>>?): Boolean = size > 24
+    }
+
+    suspend fun search(tracks: List<Track>, query: String): List<Track> {
+        if (query.isEmpty()) return tracks
+        var base: List<Track> = tracks
+        synchronized(lock) {
+            if (source !== tracks) {
+                cache.clear()
+                source = tracks
+            }
+            cache[query]?.let { return it }
+            var bestLength = -1
+            for ((key, value) in cache) {
+                if (query.startsWith(key) && key.length > bestLength) {
+                    bestLength = key.length
+                    base = value
+                }
+            }
+        }
+        val candidates = base
+        val tokens = query.split(' ').filter { it.isNotEmpty() }
+        val result = withContext(Dispatchers.Default) {
+            val out = ArrayList<Track>()
+            var n = 0
+            for (t in candidates) {
+                if ((++n and 0xFF) == 0) ensureActive() // punto de cancelacion cada 256 pistas
+                if (tokens.all { it in t.searchKey }) out.add(t)
+            }
+            out
+        }
+        synchronized(lock) {
+            if (source === tracks) cache[query] = result
+        }
+        return result
+    }
+}
+
+/** Resultado de buscar [query] en [tracks]; el trabajo ocurre fuera del hilo principal y se conserva el ultimo resultado mientras tanto. */
+@Composable
+fun rememberSearchResults(tracks: List<Track>, query: String): List<Track> {
+    val searcher = remember { TrackSearcher() }
+    val result by produceState(initialValue = tracks, tracks, query) {
+        value = searcher.search(tracks, query)
+    }
+    return result
 }
 
 fun matchesQuery(text: String, query: String): Boolean {

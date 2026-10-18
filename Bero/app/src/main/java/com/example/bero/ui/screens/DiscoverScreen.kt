@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.OpenInNew
@@ -65,13 +65,13 @@ fun DiscoverScreen(vm: BeroViewModel, onOpenSettings: () -> Unit) {
     val recs by vm.recommendations.collectAsStateWithLifecycle()
     val status by vm.lastFmStatus.collectAsStateWithLifecycle()
     val message by vm.lastFmMessage.collectAsStateWithLifecycle()
-    val apiKey by vm.settings.lastFmApiKey.collectAsStateWithLifecycle()
+    val hasKey by vm.hasLastFmKey.collectAsStateWithLifecycle()
     val onlyNew by vm.settings.discoverNewOnly.collectAsStateWithLifecycle()
     val preview by vm.previewState.collectAsStateWithLifecycle()
 
     // Al salir de la pestana se libera el reproductor de vistas previas.
     DisposableEffect(Unit) { onDispose { vm.stopPreview() } }
-    LaunchedEffect(apiKey) { vm.loadRecommendations() }
+    LaunchedEffect(hasKey) { vm.loadRecommendations() }
 
     val bar = rememberLibraryBarState()
     LibraryScaffold(
@@ -87,7 +87,7 @@ fun DiscoverScreen(vm: BeroViewModel, onOpenSettings: () -> Unit) {
         ) {
             item(key = "intro") {
                 IntroCard(
-                    noKey = apiKey.isBlank(),
+                    noKey = !hasKey,
                     status = status,
                     message = message,
                     hasResults = recs.isNotEmpty(),
@@ -97,8 +97,7 @@ fun DiscoverScreen(vm: BeroViewModel, onOpenSettings: () -> Unit) {
                     onOpenSettings = onOpenSettings
                 )
             }
-            items(recs, key = { it.suggestion.key }, contentType = { "rec" }) { rec ->
-                val index = recs.indexOf(rec)
+            itemsIndexed(recs, key = { _, rec -> rec.suggestion.key }, contentType = { _, _ -> "rec" }) { index, rec ->
                 RecommendationRow(
                     rec = rec,
                     vm = vm,

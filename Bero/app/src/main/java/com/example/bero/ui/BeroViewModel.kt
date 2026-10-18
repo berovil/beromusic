@@ -16,6 +16,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.example.bero.BuildConfig
 import com.example.bero.data.AlbumItem
 import com.example.bero.data.EXTRA_SUGGESTED
 import com.example.bero.data.DownloadResult
@@ -58,6 +59,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -106,6 +108,9 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     private val playlistStore = PlaylistStore(ctx)
     val playlists: StateFlow<List<Playlist>> = playlistStore.playlists
     private val lastFm = LastFmRepository(ctx)
+
+    /** Clave propia del usuario (opcional) o, si no hay, la que se integra al compilar (BuildConfig). */
+    private fun lastFmKey(): String = settings.lastFmApiKey.value.ifBlank { BuildConfig.LASTFM_API_KEY }
     val storageRoot: String = Environment.getExternalStorageDirectory().absolutePath
 
     // ------------------------------------------------------------------ Controlador Media3
@@ -138,7 +143,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     /** Pistas visibles (ya aplicado el filtro "ocultar audios menores a X segundos"). */
     val tracks: StateFlow<List<Track>> = combine(allTracks, settings.minSeconds) { all, min ->
         all.filter { it.durationMs >= min * 1000L }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val albums: StateFlow<List<AlbumItem>> = tracks.map { list ->
         list.groupBy { it.albumId }
@@ -153,11 +158,11 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             .sortedBy { it.name.lowercase() }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val favoriteTracks: StateFlow<List<Track>> = combine(tracks, favorites.ids) { list, ids ->
         list.filter { it.id in ids }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val totalCount: StateFlow<Int> = allTracks.map { it.size }
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
@@ -169,6 +174,11 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _currentTrack = MutableStateFlow<Track?>(null)
     val currentTrack: StateFlow<Track?> = _currentTrack.asStateFlow()
+
+    /** Para la UI que solo necesita saber si hay pista: no se recompone en cada cambio de cancion. */
+    val hasTrack: StateFlow<Boolean> = _currentTrack.map { it != null }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -221,9 +231,19 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     // ------------------------------------------------------------------ Last.fm / Smart Shuffle
 
     private val _lastFmStatus = MutableStateFlow(
-        if (settings.lastFmApiKey.value.isBlank()) LastFmStatus.NO_KEY else LastFmStatus.READY
+        if (settings.lastFmApiKey.value.isBlank() && BuildConfig.LASTFM_API_KEY.isBlank()) LastFmStatus.NO_KEY
+        else LastFmStatus.READY
     )
     val lastFmStatus: StateFlow<LastFmStatus> = _lastFmStatus.asStateFlow()
+
+    /** true si hay una clave utilizable (la del usuario o la integrada). */
+    val hasLastFmKey: StateFlow<Boolean> = settings.lastFmApiKey
+        .map { it.isNotBlank() || BuildConfig.LASTFM_API_KEY.isNotBlank() }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            settings.lastFmApiKey.value.isNotBlank() || BuildConfig.LASTFM_API_KEY.isNotBlank()
+        )
 
     private val _lastFmMessage = MutableStateFlow<String?>(null)
     val lastFmMessage: StateFlow<String?> = _lastFmMessage.asStateFlow()
@@ -265,12 +285,13 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     // ------------------------------------------------------------------ Listener del reproductor
 
-    private val playerListener = object : Player.Listener {
+    /**
+     * Siempre activo (tambien en segundo plano): SOLO lo imprescindible para que el Smart Shuffle, el progreso
+     * guardado y la recuperacion de errores sigan funcionando con la pantalla apagada.
+     */
+    private val coreListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
-            syncPlayback(player)
             val transition = events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
-            // La cola solo se reconstruye cuando cambia la lista o la pista actual (no en cada evento).
-            if (transition || events.contains(Player.EVENT_TIMELINE_CHANGED)) rebuildQueue(player)
             if (transition) topUpSuggestions()
             if (transition || events.contains(Player.EVENT_IS_PLAYING_CHANGED)) persistProgress(player)
         }
@@ -285,6 +306,46 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    /** Solo con la app VISIBLE: refresca el estado que pinta la UI. En segundo plano se desengancha. */
+    private val uiListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            syncPlayback(player)
+            // La cola solo se reconstruye cuando cambia la lista o la pista actual (no en cada evento).
+            if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TIMELINE_CHANGED)) {
+                rebuildQueue(player)
+            }
+        }
+    }
+
+    private var inForeground = true
+    private var uiListenerAttached = false
+
+    private fun attachUiListener(c: MediaController) {
+        if (uiListenerAttached) return
+        c.addListener(uiListener)
+        uiListenerAttached = true
+        syncPlayback(c) // al volver a primer plano se pone al dia de golpe
+        rebuildQueue(c)
+    }
+
+    private fun detachUiListener(c: MediaController?) {
+        if (!uiListenerAttached) return
+        c?.removeListener(uiListener)
+        uiListenerAttached = false
+    }
+
+    /** Llamados desde MainActivity (onStart / onStop). */
+    fun onAppForeground() {
+        inForeground = true
+        controller?.let { attachUiListener(it) }
+    }
+
+    fun onAppBackground() {
+        inForeground = false
+        detachUiListener(controller)
+        stopPreview() // las vistas previas no deben seguir sonando ni retener un ExoPlayer en segundo plano
     }
 
     init {
@@ -313,9 +374,8 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                 controller = c
                 // El orden aleatorio lo gestionamos nosotros (cola fisica), no ExoPlayer.
                 c.shuffleModeEnabled = false
-                c.addListener(playerListener)
-                syncPlayback(c)
-                rebuildQueue(c)
+                c.addListener(coreListener)
+                if (inForeground) attachUiListener(c) else syncPlayback(c)
                 tryRestore()
                 pendingAction?.invoke()
                 pendingAction = null
@@ -388,7 +448,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: SecurityException) {
                 emptyList()
             }
-            byId = list.associateBy { it.id }
+            byId = withContext(Dispatchers.Default) { list.associateBy { it.id } }
             allTracks.value = list
             controller?.let {
                 syncPlayback(it)
@@ -418,42 +478,69 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         if (restored || byId.isEmpty()) return
         restored = true
         if (c.mediaItemCount > 0) return
-        val saved = settings.loadQueue().mapNotNull { byId[it] }
-        if (saved.isEmpty()) return
-        originalOrder = saved.mapIndexed { i, t -> t.id.toString() to i }.toMap()
-        val lastId = settings.lastTrackId().toString()
-        val startIndex = saved.indexOfFirst { it.id.toString() == lastId }.coerceAtLeast(0)
-        c.setMediaItems(saved.map { it.toMediaItem() }, startIndex, settings.lastPosition())
-        c.prepare()
+        viewModelScope.launch {
+            // Leer/parsear la cola guardada y construir miles de MediaItem: en Default, no en Main.
+            val prepared = withContext(Dispatchers.Default) {
+                val saved = settings.loadQueue().mapNotNull { byId[it] }
+                if (saved.isEmpty()) {
+                    null
+                } else {
+                    val order = saved.mapIndexed { i, t -> t.id.toString() to i }.toMap()
+                    val lastId = settings.lastTrackId().toString()
+                    val start = saved.indexOfFirst { it.id.toString() == lastId }.coerceAtLeast(0)
+                    PreparedQueue(saved.map { it.toMediaItem() }, start, order)
+                }
+            } ?: return@launch
+            if (c.mediaItemCount > 0) return@launch // el usuario ya empezo a reproducir algo
+            originalOrder = prepared.order
+            c.setMediaItems(prepared.items, prepared.start, settings.lastPosition())
+            c.prepare()
+        }
     }
 
     // ------------------------------------------------------------------ Controles
 
+    private class PreparedQueue(val items: List<MediaItem>, val start: Int, val order: Map<String, Int>)
+
+    private var playJob: Job? = null
+
     /** Carga TODA la lista en ExoPlayer para que siguiente/anterior funcionen. Respeta el modo aleatorio. */
     fun playQueue(list: List<Track>, startIndex: Int) {
         if (list.isEmpty()) return
-        val action: () -> Unit = {
-            val c = controller
-            stopPreview()
-            if (c != null) {
+        val mode = shuffleMode.value
+        playJob?.cancel() // un toque rapido sustituye al anterior
+        playJob = viewModelScope.launch {
+            // Todo lo pesado (mezclar, miles de MediaItem, guardar la cola) fuera del hilo principal.
+            val prepared = withContext(Dispatchers.Default) {
                 val safeIndex = startIndex.coerceIn(0, list.lastIndex)
-                originalOrder = list.mapIndexed { i, t -> t.id.toString() to i }.toMap()
-                val mode = shuffleMode.value
+                val ordered: List<Track>
+                val start: Int
                 if (mode == ShuffleMode.OFF) {
-                    c.setMediaItems(list.map { it.toMediaItem() }, safeIndex, 0L)
+                    ordered = list
+                    start = safeIndex
                 } else {
                     // La pista tocada va primero; el resto, mezclado (como las apps de streaming).
-                    val first = list[safeIndex]
-                    val rest = list.filterIndexed { i, _ -> i != safeIndex }.shuffled()
-                    c.setMediaItems((listOf(first) + rest).map { it.toMediaItem() }, 0, 0L)
+                    ordered = listOf(list[safeIndex]) + list.filterIndexed { i, _ -> i != safeIndex }.shuffled()
+                    start = 0
                 }
-                c.prepare()
-                c.play()
+                val order = HashMap<String, Int>(list.size * 2)
+                list.forEachIndexed { i, t -> order[t.id.toString()] = i }
                 settings.saveQueue(list.map { it.id })
-                if (mode == ShuffleMode.SMART) topUpSuggestions()
+                PreparedQueue(ordered.map { it.toMediaItem() }, start, order)
             }
+            val action: () -> Unit = {
+                val c = controller
+                stopPreview()
+                if (c != null) {
+                    originalOrder = prepared.order
+                    c.setMediaItems(prepared.items, prepared.start, 0L)
+                    c.prepare()
+                    c.play()
+                    if (mode == ShuffleMode.SMART) topUpSuggestions()
+                }
+            }
+            if (controller == null) pendingAction = action else action()
         }
-        if (controller == null) pendingAction = action else action()
     }
 
     fun togglePlay() {
@@ -565,7 +652,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         settings.setShuffleMode(mode)
         reorderUpcoming(mode)
         if (mode == ShuffleMode.SMART) {
-            if (settings.lastFmApiKey.value.isBlank()) {
+            if (lastFmKey().isBlank()) {
                 toast("Smart Shuffle usa tus favoritos. Añade tu API key gratuita de Last.fm en Ajustes para sugerencias de pistas similares.")
             } else {
                 refreshTaste(force = false, announce = true)
@@ -580,6 +667,8 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         toast("Fila mezclada")
     }
 
+    private var reorderJob: Job? = null
+
     /** Reordena SOLO lo que viene despues de la pista actual: la reproduccion actual no se interrumpe. */
     private fun reorderUpcoming(mode: ShuffleMode) {
         val c = controller ?: return
@@ -589,22 +678,42 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
             if (mode == ShuffleMode.SMART) topUpSuggestions()
             return
         }
-        val upcoming = ArrayList<Track>()
+        // 1) Instantanea barata en Main (el controlador solo se toca desde Main): ids y marca "sugerida".
+        val ids = ArrayList<String>(count - cur - 1)
+        val suggested = ArrayList<Boolean>(count - cur - 1)
         for (i in cur + 1 until count) {
             val item = c.getMediaItemAt(i)
-            val track = byId[item.mediaId.toLongOrNull() ?: -1L] ?: continue
-            // Las sugerencias ajenas a la lista original se descartan al reordenar.
-            if (isSuggested(item) && item.mediaId !in originalOrder) continue
-            upcoming.add(track)
+            ids.add(item.mediaId)
+            suggested.add(isSuggested(item))
         }
-        val ordered = if (mode == ShuffleMode.OFF) {
-            upcoming.sortedBy { originalOrder[it.id.toString()] ?: Int.MAX_VALUE }
-        } else {
-            upcoming.shuffled()
+        val order = originalOrder
+
+        reorderJob?.cancel()
+        reorderJob = viewModelScope.launch {
+            // 2) Mezclar / ordenar y construir los MediaItem en Default.
+            val items = withContext(Dispatchers.Default) {
+                val upcoming = ArrayList<Track>()
+                for (k in ids.indices) {
+                    val id = ids[k]
+                    val track = byId[id.toLongOrNull() ?: -1L] ?: continue
+                    // Las sugerencias ajenas a la lista original se descartan al reordenar.
+                    if (suggested[k] && id !in order) continue
+                    upcoming.add(track)
+                }
+                val ordered = if (mode == ShuffleMode.OFF) {
+                    upcoming.sortedBy { order[it.id.toString()] ?: Int.MAX_VALUE }
+                } else {
+                    upcoming.shuffled()
+                }
+                ordered.map { it.toMediaItem() }
+            }
+            // 3) Aplicar en Main, solo si la cola no cambio mientras tanto.
+            val live = controller ?: return@launch
+            if (live.currentMediaItemIndex != cur || live.mediaItemCount != count) return@launch
+            live.removeMediaItems(cur + 1, count)
+            if (items.isNotEmpty()) live.addMediaItems(items)
+            if (mode == ShuffleMode.SMART) topUpSuggestions()
         }
-        c.removeMediaItems(cur + 1, count)
-        if (ordered.isNotEmpty()) c.addMediaItems(ordered.map { it.toMediaItem() })
-        if (mode == ShuffleMode.SMART) topUpSuggestions()
     }
 
     /**
@@ -715,13 +824,13 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onLastFmKeyChanged(key: String) {
         settings.setLastFmApiKey(key)
-        _lastFmStatus.value = if (key.isBlank()) LastFmStatus.NO_KEY else LastFmStatus.READY
+        _lastFmStatus.value = if (lastFmKey().isBlank()) LastFmStatus.NO_KEY else LastFmStatus.READY
         _lastFmMessage.value = null
     }
 
     /** Comprueba la API key con una peticion minima y explica el motivo si falla. */
     fun testLastFm() {
-        val key = settings.lastFmApiKey.value
+        val key = lastFmKey()
         if (key.isBlank()) {
             toast("Pega primero tu API key de Last.fm")
             return
@@ -748,7 +857,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshTaste(force: Boolean, announce: Boolean) {
-        val key = settings.lastFmApiKey.value
+        val key = lastFmKey()
         if (key.isBlank()) return
         viewModelScope.launch {
             if (!NetworkUtil.isOnline(ctx)) {
@@ -813,7 +922,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Pestana Descubrir: carga las recomendaciones (usa la cache del dia si existe). */
     fun loadRecommendations() {
-        if (settings.lastFmApiKey.value.isBlank()) return
+        if (lastFmKey().isBlank()) return
         if (_allRecommendations.value.isNotEmpty()) return
         refreshTaste(force = false, announce = false)
     }
@@ -937,7 +1046,8 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         stopPreview()
-        controller?.removeListener(playerListener)
+        controller?.removeListener(coreListener)
+        detachUiListener(controller)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controller = null
         super.onCleared()

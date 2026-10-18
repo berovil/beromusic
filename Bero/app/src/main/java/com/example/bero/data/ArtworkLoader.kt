@@ -29,6 +29,14 @@ object ArtworkLoader {
 
     fun peek(track: Track, px: Int): Bitmap? = cache.get(key(track, px))
 
+    /** Respuesta a onTrimMemory: UI oculta => mitad de la cache; memoria critica o proceso en segundo plano => todo. */
+    fun trim(level: Int) {
+        when {
+            level >= 40 || level == 15 -> cache.evictAll()
+            level >= 20 || level == 10 -> cache.trimToSize(cache.maxSize() / 2)
+        }
+    }
+
     suspend fun load(context: Context, track: Track, px: Int): Bitmap? = withContext(Dispatchers.IO) {
         val k = key(track, px)
         cache.get(k)?.let { return@withContext it }

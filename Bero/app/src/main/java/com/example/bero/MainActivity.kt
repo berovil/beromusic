@@ -1,5 +1,6 @@
 package com.example.bero
 
+import android.content.ComponentCallbacks2
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -10,9 +11,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.bero.data.ArtworkLoader
 import com.example.bero.data.ThemeMode
 import com.example.bero.ui.BeroApp
 import com.example.bero.ui.BeroViewModel
+import com.example.bero.ui.components.RemoteArtLoader
 import com.example.bero.ui.theme.BeroTheme
 
 class MainActivity : ComponentActivity() {
@@ -47,8 +50,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        vm.onAppForeground() // vuelve a enganchar el listener de la UI y se pone al dia
+    }
+
     override fun onStop() {
         vm.saveProgressNow()
+        vm.onAppBackground() // desengancha el listener de la UI: en segundo plano solo queda el nucleo minimo
         super.onStop()
+    }
+
+    /** El sistema pide memoria: se sueltan las cachés de imagenes (se recargan solas al volver). */
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        ArtworkLoader.trim(level)
+        RemoteArtLoader.trim(level)
     }
 }

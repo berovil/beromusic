@@ -52,4 +52,7 @@ data class AlbumItem(
     val name: String,
     val artist: String,
     val tracks: List<Track>,
-)
+) {
+    /** Clave de busqueda normalizada, calculada una sola vez. */
+    val searchKey: String by lazy(LazyThreadSafetyMode.PUBLICATION) { SmartShuffle.norm("$name $artist") }
+}

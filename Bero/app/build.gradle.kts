@@ -14,6 +14,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        // Clave de Last.fm integrada en la app para que NINGUN usuario tenga que crear la suya.
+        // Se lee de la variable de entorno LASTFM_API_KEY (GitHub Actions -> Secrets) o de la propiedad de Gradle
+        // LASTFM_API_KEY (gradle.properties local, NO subir al repositorio). Sin clave, la app pide la del usuario.
+        val lastFmKey = (System.getenv("LASTFM_API_KEY") ?: (project.findProperty("LASTFM_API_KEY") as String?) ?: "").trim()
+        buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmKey\"")
     }
 
     buildTypes {
@@ -30,6 +36,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

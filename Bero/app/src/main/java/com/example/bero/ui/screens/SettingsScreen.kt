@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.bero.BuildConfig
 import com.example.bero.data.AccentColor
 import com.example.bero.data.ThemeMode
 import com.example.bero.data.ViewMode
@@ -256,10 +257,19 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(12.dp))
+                if (BuildConfig.LASTFM_API_KEY.isNotBlank()) {
+                    Text(
+                        "Esta versión de Bero ya incluye una clave de Last.fm: no necesitas hacer nada. " +
+                            "Puedes usar la tuya si quieres (opcional).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
                 OutlinedTextField(
                     value = lastFmKey,
                     onValueChange = vm::onLastFmKeyChanged,
-                    label = { Text("API key de Last.fm") },
+                    label = { Text(if (BuildConfig.LASTFM_API_KEY.isNotBlank()) "API key propia (opcional)" else "API key de Last.fm") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

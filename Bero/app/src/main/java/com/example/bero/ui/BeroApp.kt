@@ -217,8 +217,8 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
     var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
 
     val expanded by vm.playerExpanded.collectAsStateWithLifecycle()
-    val current by vm.currentTrack.collectAsStateWithLifecycle()
-    val isPlaying by vm.isPlaying.collectAsStateWithLifecycle()
+    // Solo un Boolean: LibraryApp NO se recompone al cambiar de cancion ni al pausar (eso lo hace MiniPlayerHost).
+    val hasTrack by vm.hasTrack.collectAsStateWithLifecycle()
 
     // Mensajes de una sola vez y enlaces externos (Last.fm) emitidos por el ViewModel
     LaunchedEffect(Unit) {
@@ -271,19 +271,11 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
             bottomBar = {
                 Column {
                     AnimatedVisibility(
-                        visible = current != null,
+                        visible = hasTrack,
                         enter = slideInVertically(tween(260)) { it } + fadeIn(tween(260)),
                         exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160))
                     ) {
-                        current?.let { track ->
-                            MiniPlayer(
-                                track = track,
-                                isPlaying = isPlaying,
-                                onOpen = vm::expandPlayer,
-                                onToggle = vm::togglePlay,
-                                onNext = vm::next
-                            )
-                        }
+                        MiniPlayerHost(vm)
                     }
                     BeroBottomBar(selected = tab, onSelect = { tab = it })
                 }
@@ -335,7 +327,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
         }
 
         AnimatedVisibility(
-            visible = expanded && current != null,
+            visible = expanded && hasTrack,
             enter = slideInVertically { it },
             exit = slideOutVertically { it }
         ) {
@@ -421,6 +413,22 @@ private fun shareTrack(ctx: Context, track: Track) {
         ctx.startActivity(Intent.createChooser(send, "Compartir ${track.title}"))
     } catch (e: Exception) {
         Toast.makeText(ctx, "No se pudo compartir el archivo", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** Lee por su cuenta pista y estado de reproduccion: aisla esas recomposiciones del resto de la app. */
+@Composable
+private fun MiniPlayerHost(vm: BeroViewModel) {
+    val track by vm.currentTrack.collectAsStateWithLifecycle()
+    val isPlaying by vm.isPlaying.collectAsStateWithLifecycle()
+    track?.let {
+        MiniPlayer(
+            track = it,
+            isPlaying = isPlaying,
+            onOpen = vm::expandPlayer,
+            onToggle = vm::togglePlay,
+            onNext = vm::next
+        )
     }
 }
 
