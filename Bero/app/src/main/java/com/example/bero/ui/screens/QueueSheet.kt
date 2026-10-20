@@ -67,6 +67,8 @@ import com.example.bero.ui.components.BeroIconButton
 import com.example.bero.ui.components.pressable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 private val RowHeight = 68.dp
 
@@ -136,7 +138,7 @@ private fun QueueContent(
                 Text(
                     "Fila de reproducción",
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = beroWeight(FontWeight.ExtraBold),
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
                 Text(
@@ -177,7 +179,7 @@ private fun QueueContent(
                             Column(Modifier.weight(1f)) {
                                 Text(
                                     current.title,
-                                    fontWeight = FontWeight.Bold,
+                                    fontWeight = beroWeight(FontWeight.Bold),
                                     color = accent,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -241,7 +243,7 @@ private fun SectionLabel(text: String) {
     Text(
         text.uppercase(),
         fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = beroWeight(FontWeight.Bold),
         letterSpacing = 1.5.sp,
         color = Color.White.copy(alpha = 0.55f),
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 6.dp)
@@ -258,7 +260,7 @@ private fun LazyItemScope.QueueRow(
     val isDragging = dragState.draggingKey == entry.key
     val haptic = LocalHapticFeedback.current
     val latestOnPlay by rememberUpdatedState(onPlay)
-    val shape = RoundedCornerShape(18.dp)
+    val shape = beroShape(18.dp)
 
     // El desplazamiento se lee dentro del bloque de capa: arrastrar NO recompone la fila.
     val itemModifier = if (isDragging) {
@@ -305,7 +307,7 @@ private fun LazyItemScope.QueueRow(
         Column(Modifier.weight(1f)) {
             Text(
                 entry.track.title,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = beroWeight(FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -338,7 +340,7 @@ private fun LazyItemScope.QueueRow(
 
 @Composable
 private fun ExternalRow(suggestion: ExternalSuggestion, accent: Color, onOpen: () -> Unit) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = beroShape(18.dp)
     Row(
         Modifier
             .fillMaxWidth()
@@ -350,7 +352,7 @@ private fun ExternalRow(suggestion: ExternalSuggestion, accent: Color, onOpen: (
         Column(Modifier.weight(1f)) {
             Text(
                 suggestion.title,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = beroWeight(FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

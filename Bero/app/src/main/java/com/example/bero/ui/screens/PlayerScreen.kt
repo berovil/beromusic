@@ -98,6 +98,8 @@ import com.example.bero.ui.components.VisualizerStyleDialog
 import com.example.bero.ui.components.formatTime
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 /**
  * PlayerScreen SOLO decide el modo y el fondo. Cada bloque (barra superior, caratula, espectro,
@@ -197,7 +199,7 @@ private fun ColumnScope.NormalModeContent(
         ArtworkSwipe(vm, current, onSwipeUp = onOpenQueue)
     }
 
-    val panelShape = RoundedCornerShape(28.dp)
+    val panelShape = beroShape(28.dp)
     Column(
         Modifier
             .fillMaxWidth()
@@ -213,7 +215,7 @@ private fun ColumnScope.NormalModeContent(
         Text(
             current.title,
             fontSize = 26.sp,
-            fontWeight = FontWeight.ExtraBold,
+            fontWeight = beroWeight(FontWeight.ExtraBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -328,7 +330,7 @@ private fun PlayerTopBar(
             Text(
                 title,
                 fontSize = if (spaced) 12.sp else 16.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = beroWeight(FontWeight.Bold),
                 letterSpacing = if (spaced) 2.sp else 0.sp,
                 color = Color.White.copy(alpha = if (spaced) 0.85f else 1f),
                 maxLines = 1,
@@ -489,7 +491,7 @@ private fun PanelTopRow(vm: BeroViewModel, accent: Color, onOpenQueue: () -> Uni
             Box(
                 Modifier
                     .size(width = 38.dp, height = 4.dp)
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(beroShape(2.dp))
                     .background(Color.White.copy(alpha = 0.35f))
             )
         }

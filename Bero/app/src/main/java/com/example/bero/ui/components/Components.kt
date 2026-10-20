@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -72,6 +73,11 @@ import com.example.bero.R
 import com.example.bero.data.ArtworkLoader
 import com.example.bero.data.Track
 import kotlinx.coroutines.delay
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroCircle
+import com.example.bero.ui.theme.beroWeight
+import com.example.bero.ui.theme.LocalThemeStyle
+import com.example.bero.data.ThemeStyle
 
 fun formatTime(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)
@@ -83,7 +89,7 @@ fun formatTime(ms: Long): String {
  * Usa un InteractionSource propio (sin ripple) y NO consume gestos fuera de su area: no hay clics fantasma.
  */
 fun Modifier.pressable(
-    shape: Shape = RoundedCornerShape(20.dp),
+    shape: Shape? = null,
     pressedScale: Float = 0.96f,
     onClick: () -> Unit,
 ): Modifier = longPressable(shape, pressedScale, null, onClick)
@@ -91,7 +97,7 @@ fun Modifier.pressable(
 /** Igual que [pressable] pero con pulsacion larga (Modifier.combinedClickable + vibracion). */
 @OptIn(ExperimentalFoundationApi::class)
 fun Modifier.longPressable(
-    shape: Shape = RoundedCornerShape(20.dp),
+    shape: Shape? = null,
     pressedScale: Float = 0.96f,
     onLongClick: (() -> Unit)?,
     onClick: () -> Unit,
@@ -109,12 +115,13 @@ fun Modifier.longPressable(
         label = "pressGlow"
     )
     val accent = MaterialTheme.colorScheme.primary
+    val resolvedShape = shape ?: beroShape(20.dp) // por defecto, la forma del estilo activo
     this
         .graphicsLayer {
             scaleX = scale
             scaleY = scale
         }
-        .clip(shape)
+        .clip(resolvedShape)
         .drawBehind { drawRect(accent.copy(alpha = glow)) }
         .combinedClickable(
             interactionSource = interaction,
@@ -168,7 +175,7 @@ fun BeroIconButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(CircleShape)
+            .clip(beroCircle())
             .background(background)
             .combinedClickable(
                 interactionSource = interaction,
@@ -213,7 +220,7 @@ fun BigPlayButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(CircleShape)
+            .clip(beroCircle())
             .background(bg)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
@@ -226,33 +233,40 @@ fun BigPlayButton(
 
 @Composable
 fun BeroChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(16.dp)
-    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-    else MaterialTheme.colorScheme.surfaceVariant
+    val style = LocalThemeStyle.current
+    val cs = MaterialTheme.colorScheme
+    val shape = beroShape(16.dp)
+    val bg = when (style) {
+        // Niagara: nada de pildoras pesadas; solo un leve tinte si esta seleccionado
+        ThemeStyle.MINIMAL -> if (selected) cs.primary.copy(alpha = 0.10f) else Color.Transparent
+        else -> if (selected) cs.primary.copy(alpha = 0.22f) else cs.surfaceVariant
+    }
+    val borderColor = when (style) {
+        ThemeStyle.MINIMAL -> Color.Transparent
+        ThemeStyle.PIXEL -> if (selected) cs.primary else cs.outline.copy(alpha = 0.6f)
+        else -> if (selected) cs.primary else Color.Transparent
+    }
+    val borderWidth = if (style == ThemeStyle.PIXEL) 2.dp else 1.dp
     Box(
         modifier = modifier
             .clip(shape)
             .background(bg)
-            .border(
-                1.dp,
-                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape
-            )
+            .border(borderWidth, borderColor, shape)
             .pressable(shape, 0.93f, onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            fontWeight = if (selected) beroWeight(FontWeight.Bold) else FontWeight.Medium,
+            color = if (selected) cs.primary else cs.onSurfaceVariant
         )
     }
 }
 
 @Composable
 fun BeroButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = beroShape(20.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -267,22 +281,29 @@ fun BeroButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
             Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
         }
-        Text(text, color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+        Text(text, color = MaterialTheme.colorScheme.onPrimary, fontWeight = beroWeight(FontWeight.Bold))
     }
 }
 
+/**
+ * Tarjeta de seccion. Clasico: translucida con borde; Minimalista: sin tarjeta (solo una linea fina de separacion);
+ * Pixel: borde grueso; Pastel: sombra difuminada.
+ */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(28.dp),
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val minimal = LocalThemeStyle.current == ThemeStyle.MINIMAL
+    val line = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
     Column(
-        modifier = modifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f))
-            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), shape)
-            .padding(16.dp),
+        modifier = (if (minimal) {
+            modifier.drawBehind {
+                drawLine(line, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
+            }
+        } else {
+            modifier.beroSurface(28.dp)
+        }).padding(if (minimal) PaddingValues(horizontal = 4.dp, vertical = 14.dp) else PaddingValues(16.dp)),
         content = content
     )
 }
@@ -326,7 +347,7 @@ fun Artwork(
             value = ArtworkLoader.load(context, track, px)?.asImageBitmap()
         }
     }
-    Box(modifier.clip(RoundedCornerShape(corner))) {
+    Box(modifier.clip(beroShape(corner))) {
         val bmp = bitmap
         if (bmp != null) {
             Image(
@@ -362,7 +383,7 @@ fun ScreenHeader(
             Text(
                 title,
                 fontSize = 30.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = beroWeight(FontWeight.ExtraBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -390,11 +411,12 @@ fun TrackRow(
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = beroShape(20.dp)
+    val rowGap = if (LocalThemeStyle.current == ThemeStyle.MINIMAL) 7.dp else 2.dp
     Row(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .padding(horizontal = 12.dp, vertical = rowGap)
             .longPressable(shape, 0.97f, onLongClick, onClick)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -405,7 +427,7 @@ fun TrackRow(
             Text(
                 track.title,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = beroWeight(FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface

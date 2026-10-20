@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
             val mode by vm.settings.themeMode.collectAsStateWithLifecycle()
             val accentArgb by vm.settings.accentArgb.collectAsStateWithLifecycle()
             val gradient by vm.settings.gradientBackground.collectAsStateWithLifecycle()
+            val style by vm.settings.themeStyle.collectAsStateWithLifecycle()
             val expanded by vm.playerExpanded.collectAsStateWithLifecycle()
 
             // El reproductor siempre es oscuro: iconos de barra claros aunque el tema sea "Claro".
@@ -44,7 +45,7 @@ class MainActivity : ComponentActivity() {
                 onDispose { }
             }
 
-            BeroTheme(mode = mode, accent = Color(accentArgb), gradient = gradient) {
+            BeroTheme(mode = mode, accent = Color(accentArgb), gradient = gradient, style = style) {
                 BeroApp(vm)
             }
         }

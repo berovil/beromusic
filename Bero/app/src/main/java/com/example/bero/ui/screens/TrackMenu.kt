@@ -48,6 +48,8 @@ import com.example.bero.ui.components.formatTime
 import com.example.bero.ui.components.pressable
 import java.text.DateFormat
 import java.util.Date
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 /** Menu contextual (pulsacion larga sobre una pista). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,7 +82,7 @@ fun TrackMenuSheet(
                 Artwork(track, Modifier.size(52.dp), corner = 14.dp, px = 160)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(track.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(track.title, fontWeight = beroWeight(FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         track.artist,
                         style = MaterialTheme.typography.bodySmall,
@@ -110,7 +112,7 @@ private fun MenuAction(icon: ImageVector, label: String, onClick: () -> Unit, de
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
-            .pressable(RoundedCornerShape(18.dp), 0.97f, onClick)
+            .pressable(beroShape(18.dp), 0.97f, onClick)
             .padding(horizontal = 12.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -130,7 +132,7 @@ fun TrackInfoDialog(vm: BeroViewModel, track: Track, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
-        title = { Text("Información", fontWeight = FontWeight.Bold) },
+        title = { Text("Información", fontWeight = beroWeight(FontWeight.Bold)) },
         text = {
             val i = info
             if (i == null) {
@@ -170,7 +172,7 @@ private fun InfoRow(label: String, value: String) {
         Text(
             label.uppercase(),
             fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = beroWeight(FontWeight.Bold),
             color = MaterialTheme.colorScheme.primary
         )
         Text(value.ifEmpty { "—" }, fontSize = 14.sp)
@@ -181,7 +183,7 @@ private fun InfoRow(label: String, value: String) {
 fun DeleteConfirmDialog(track: Track, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("¿Eliminar canción?", fontWeight = FontWeight.Bold) },
+        title = { Text("¿Eliminar canción?", fontWeight = beroWeight(FontWeight.Bold)) },
         text = {
             Text(
                 "\"${track.title}\" se borrará físicamente del dispositivo. " +

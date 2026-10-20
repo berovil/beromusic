@@ -69,6 +69,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
+import com.example.bero.ui.theme.beroShapeBottom
+import com.example.bero.ui.theme.beroSurface
 
 object LibraryBarDefaults {
     /** Altura de la barra: las listas la reservan como padding superior para no quedar tapadas. */
@@ -262,13 +266,11 @@ private fun LibraryTopBar(
         enter = slideInVertically { -it } + fadeIn(),
         exit = slideOutVertically { -it } + fadeOut()
     ) {
-        val shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+        val shape = beroShapeBottom(24.dp)
         Column(
             Modifier
                 .fillMaxWidth()
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f))
-                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), shape)
+                .beroSurface(shape, alpha = 0.94f, solidWhenMinimal = true)
         ) {
             Row(
                 Modifier
@@ -289,7 +291,7 @@ private fun LibraryTopBar(
                         Text(
                             title,
                             fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold,
+                            fontWeight = beroWeight(FontWeight.ExtraBold),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -354,7 +356,7 @@ private fun SearchField(state: LibraryBarState, modifier: Modifier) {
         onValueChange = { state.rawQuery = it },
         singleLine = true,
         placeholder = { Text("Buscar canciones, artistas, álbumes…") },
-        shape = RoundedCornerShape(26.dp),
+        shape = beroShape(26.dp),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
         modifier = modifier

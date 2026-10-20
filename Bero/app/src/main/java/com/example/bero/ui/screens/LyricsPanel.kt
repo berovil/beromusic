@@ -31,6 +31,8 @@ import com.example.bero.data.LyricsState
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.pressable
 import kotlin.math.abs
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 /** Letras estilo Apple Music: izquierda, grandes y gruesas; la linea actual brilla; tocar una linea hace seekTo. */
 @Composable
@@ -111,12 +113,12 @@ private fun LyricLines(
                 color = color,
                 fontSize = 28.sp,
                 lineHeight = 34.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = beroWeight(FontWeight.ExtraBold),
                 textAlign = TextAlign.Start,
                 style = TextStyle(shadow = glow),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pressable(RoundedCornerShape(16.dp), 0.97f) {
+                    .pressable(beroShape(16.dp), 0.97f) {
                         if (lyrics.synced) vm.seekTo(line.timeMs)
                     }
                     .padding(horizontal = 12.dp, vertical = 10.dp)

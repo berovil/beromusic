@@ -43,6 +43,8 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 /**
  * Cinco estilos del espectrograma. Todos usan el MISMO array de valores 0..1, asi que alternar entre
@@ -190,7 +192,7 @@ fun VisualizerStyleDialog(
     onSelect: (VisualizerStyle) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(28.dp)
+    val shape = beroShape(28.dp)
     val sample = remember { FloatArray(32) { i -> (0.2f + 0.7f * abs(sin(i * 0.42f + 0.6f))).coerceIn(0f, 1f) } }
     val samplePeaks = remember { FloatArray(32) { i -> (sample[i] + 0.12f).coerceAtMost(1f) } }
     val accent = MaterialTheme.colorScheme.primary
@@ -204,13 +206,13 @@ fun VisualizerStyleDialog(
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
-            Text("Estilo del espectrograma", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Estilo del espectrograma", fontSize = 20.sp, fontWeight = beroWeight(FontWeight.Bold))
             Spacer(Modifier.height(12.dp))
 
             VisualizerStyle.entries.forEach { style ->
                 val selected = style == current
                 val scratch = remember { SpectrumScratch() }
-                val rowShape = RoundedCornerShape(18.dp)
+                val rowShape = beroShape(18.dp)
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -228,7 +230,7 @@ fun VisualizerStyleDialog(
                 ) {
                     Text(
                         style.label,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        fontWeight = if (selected) beroWeight(FontWeight.Bold) else FontWeight.Medium,
                         color = if (selected) accent else MaterialTheme.colorScheme.onSurface
                     )
                     Canvas(

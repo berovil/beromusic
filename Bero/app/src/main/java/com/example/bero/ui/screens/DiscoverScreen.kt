@@ -54,6 +54,8 @@ import com.example.bero.ui.components.RemoteArtwork
 import com.example.bero.ui.components.pressable
 import com.example.bero.ui.components.rememberLibraryBarState
 import com.example.bero.ui.components.staggeredAppear
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 /**
  * Descubrir: musica que NO tienes en el telefono, recomendada en linea segun tu gusto (Last.fm).
@@ -130,7 +132,7 @@ private fun IntroCard(
             .animateContentSize()
     ) {
         if (noKey) {
-            Text("Recomendaciones en línea", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text("Recomendaciones en línea", fontWeight = beroWeight(FontWeight.Bold), fontSize = 17.sp)
             Spacer(Modifier.height(6.dp))
             Text(
                 "Para descubrir música nueva según tus gustos necesitas una API key gratuita de Last.fm " +
@@ -143,7 +145,7 @@ private fun IntroCard(
             return@GlassCard
         }
 
-        Text("Según tu gusto musical", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        Text("Según tu gusto musical", fontWeight = beroWeight(FontWeight.Bold), fontSize = 17.sp)
         Spacer(Modifier.height(6.dp))
         when {
             status == LastFmStatus.LOADING -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -192,7 +194,7 @@ private fun RecommendationRow(
     val info by produceState<PreviewInfo?>(initialValue = null, s.key) { value = vm.lookupPreview(s) }
     val previewUrl = info?.previewUrl
     var menu by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(20.dp)
+    val shape = beroShape(20.dp)
 
     val onPlay: () -> Unit = {
         when {
@@ -216,7 +218,7 @@ private fun RecommendationRow(
             Text(
                 s.title,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = beroWeight(FontWeight.SemiBold),
                 color = if (previewing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

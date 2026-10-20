@@ -99,6 +99,13 @@ import com.example.bero.ui.screens.TrackInfoDialog
 import com.example.bero.ui.screens.TrackMenuSheet
 import com.example.bero.ui.screens.TracksScreen
 import com.example.bero.ui.theme.appBackground
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
+import com.example.bero.data.ThemeStyle
+import com.example.bero.ui.components.MiniPlayerWave
+import com.example.bero.ui.theme.LocalThemeStyle
+import com.example.bero.ui.theme.beroShapeTop
+import com.example.bero.ui.theme.beroSurface
 
 enum class MainTab(val label: String, val icon: ImageVector) {
     Tracks("Pistas", Icons.Rounded.QueueMusic),
@@ -183,7 +190,7 @@ private fun PermissionScreen(onGrant: () -> Unit, onOpenSettings: () -> Unit) {
     ) {
         Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(72.dp))
         Spacer(Modifier.height(16.dp))
-        Text("Bero necesita acceso a tu música", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Bero necesita acceso a tu música", fontSize = 22.sp, fontWeight = beroWeight(FontWeight.Bold))
         Spacer(Modifier.height(8.dp))
         Text(
             "Concede el permiso de audio para listar tus canciones. " +
@@ -421,10 +428,12 @@ private fun shareTrack(ctx: Context, track: Track) {
 private fun MiniPlayerHost(vm: BeroViewModel) {
     val track by vm.currentTrack.collectAsStateWithLifecycle()
     val isPlaying by vm.isPlaying.collectAsStateWithLifecycle()
+    val waveEnabled by vm.settings.miniWaveEnabled.collectAsStateWithLifecycle()
     track?.let {
         MiniPlayer(
             track = it,
             isPlaying = isPlaying,
+            waveEnabled = waveEnabled,
             onOpen = vm::expandPlayer,
             onToggle = vm::togglePlay,
             onNext = vm::next
@@ -436,22 +445,30 @@ private fun MiniPlayerHost(vm: BeroViewModel) {
 private fun MiniPlayer(
     track: Track,
     isPlaying: Boolean,
+    waveEnabled: Boolean,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
     onNext: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(28.dp)
-    Row(
+    val shape = beroShape(28.dp)
+    val cs = MaterialTheme.colorScheme
+    // Minimalista: sin tarjeta, el contenedor es el propio fondo.
+    val container = if (LocalThemeStyle.current == ThemeStyle.MINIMAL) cs.background else cs.surfaceContainerHigh
+    Box(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f))
-            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), shape)
+            .beroSurface(shape, color = container, alpha = 0.96f, solidWhenMinimal = true)
             .pressable(shape, 0.98f, onOpen)
-            .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
+        // Onda sutil de fondo; se mueve solo mientras suena y se puede desactivar en Ajustes.
+        if (waveEnabled) MiniPlayerWave(isPlaying, container, Modifier.matchParentSize())
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         Artwork(track, Modifier.size(46.dp), corner = 16.dp, px = 160)
         Column(
             Modifier
@@ -460,7 +477,7 @@ private fun MiniPlayer(
         ) {
             Text(
                 track.title,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = beroWeight(FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -480,17 +497,23 @@ private fun MiniPlayer(
             iconSize = 28.dp
         )
         BeroIconButton(Icons.Rounded.SkipNext, "Siguiente", onNext, size = 48.dp, iconSize = 28.dp)
+        }
     }
 }
 
 @Composable
 private fun BeroBottomBar(selected: MainTab, onSelect: (MainTab) -> Unit) {
-    val barShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    val barShape = beroShapeTop(28.dp)
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(barShape)
-            .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.97f))
+            .beroSurface(
+                barShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                alpha = 0.97f,
+                bordered = false,
+                solidWhenMinimal = true
+            )
             .navigationBarsPadding()
             .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
@@ -517,14 +540,14 @@ private fun BeroBottomBar(selected: MainTab, onSelect: (MainTab) -> Unit) {
             Column(
                 Modifier
                     .weight(1f)
-                    .pressable(RoundedCornerShape(20.dp), 0.92f) { onSelect(item) }
+                    .pressable(beroShape(20.dp), 0.92f) { onSelect(item) }
                     .padding(vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
                     Modifier
                         .size(width = 58.dp, height = 32.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(beroShape(16.dp))
                         .background(pillColor),
                     contentAlignment = Alignment.Center
                 ) {
@@ -543,7 +566,7 @@ private fun BeroBottomBar(selected: MainTab, onSelect: (MainTab) -> Unit) {
                 Text(
                     item.label,
                     fontSize = 11.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    fontWeight = if (isSelected) beroWeight(FontWeight.Bold) else FontWeight.Medium,
                     color = if (isSelected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )

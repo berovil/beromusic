@@ -14,6 +14,14 @@ enum class ThemeMode(val label: String) {
     COLOR("Color"),
 }
 
+/** Estetica COMPLETA de la app: colores, formas, tipografia, bordes y sombras (no solo el color de acento). */
+enum class ThemeStyle(val label: String, val description: String) {
+    CLASSIC("Clásico", "Tu color de acento, tarjetas translúcidas y esquinas redondeadas."),
+    MINIMAL("Minimalista", "Estilo Niagara: negro o blanco puros, sin tarjetas ni bordes, tipografía ligera y mucho espacio."),
+    PIXEL("Pixel", "Retro 8-bit: colores saturados, esquinas cortadas, bordes gruesos y tipografía monoespaciada."),
+    PASTEL("Pastel", "Tonos suaves de lavanda, menta y durazno, formas de píldora y sombras difuminadas."),
+}
+
 enum class ShuffleMode { OFF, ON, SMART }
 
 /** Como se muestran las listas de canciones (pistas, favoritos, album y carpetas virtuales). */
@@ -53,6 +61,13 @@ class SettingsStore(context: Context) {
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
     // Migracion: antes se guardaba el NOMBRE del color; ahora se guarda el ARGB libre.
+    private val _themeStyle = MutableStateFlow(readEnum("theme_style", ThemeStyle.CLASSIC))
+    val themeStyle: StateFlow<ThemeStyle> = _themeStyle.asStateFlow()
+
+    /** Onda sutil animada de fondo en el mini-reproductor. */
+    private val _miniWave = MutableStateFlow(prefs.getBoolean("mini_wave", true))
+    val miniWaveEnabled: StateFlow<Boolean> = _miniWave.asStateFlow()
+
     private val _accentArgb = MutableStateFlow(
         if (prefs.contains("accent_argb")) {
             prefs.getInt("accent_argb", AccentColor.PURPLE.color.toArgb())
@@ -107,6 +122,16 @@ class SettingsStore(context: Context) {
     fun setThemeMode(mode: ThemeMode) {
         _themeMode.value = mode
         prefs.edit().putString("theme", mode.name).apply()
+    }
+
+    fun setThemeStyle(style: ThemeStyle) {
+        _themeStyle.value = style
+        prefs.edit().putString("theme_style", style.name).apply()
+    }
+
+    fun setMiniWaveEnabled(enabled: Boolean) {
+        _miniWave.value = enabled
+        prefs.edit().putBoolean("mini_wave", enabled).apply()
     }
 
     fun setAccentArgb(argb: Int) {

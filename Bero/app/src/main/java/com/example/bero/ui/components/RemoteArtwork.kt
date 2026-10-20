@@ -22,6 +22,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import java.net.URL
+import com.example.bero.ui.theme.beroShape
 
 /** Descarga de caratulas remotas (Deezer): cache LRU, max. 3 descargas a la vez, cancelable. */
 object RemoteArtLoader {
@@ -68,7 +69,7 @@ fun RemoteArtwork(url: String?, modifier: Modifier = Modifier, corner: Dp = 16.d
     ) {
         value = if (url == null) null else (RemoteArtLoader.peek(url) ?: RemoteArtLoader.load(url))?.asImageBitmap()
     }
-    Box(modifier.clip(RoundedCornerShape(corner))) {
+    Box(modifier.clip(beroShape(corner))) {
         val bmp = bitmap
         if (bmp != null) {
             Image(

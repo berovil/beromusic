@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.bero.data.Playlist
 import com.example.bero.ui.components.pressable
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 /** Dialogo con un campo de texto (crear / renombrar carpeta virtual). */
 @Composable
@@ -44,7 +46,7 @@ fun NameDialog(
     var name by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title, fontWeight = FontWeight.Bold) },
+        title = { Text(title, fontWeight = beroWeight(FontWeight.Bold)) },
         text = {
             OutlinedTextField(
                 value = name,
@@ -72,7 +74,7 @@ fun AddToFolderDialog(
     var newName by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Añadir a carpeta", fontWeight = FontWeight.Bold) },
+        title = { Text("Añadir a carpeta", fontWeight = beroWeight(FontWeight.Bold)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (playlists.isEmpty()) {
@@ -85,7 +87,7 @@ fun AddToFolderDialog(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .pressable(RoundedCornerShape(16.dp), 0.97f) { onPick(pl) }
+                            .pressable(beroShape(16.dp), 0.97f) { onPick(pl) }
                             .padding(horizontal = 8.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -97,7 +99,7 @@ fun AddToFolderDialog(
                         )
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(pl.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(pl.name, fontWeight = beroWeight(FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 "${pl.trackIds.size} pistas",
                                 style = MaterialTheme.typography.bodySmall,

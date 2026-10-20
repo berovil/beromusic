@@ -44,6 +44,9 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.sin
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroCircle
+import com.example.bero.ui.theme.beroWeight
 
 /**
  * Selector de color libre: circulo cromatico (matiz = angulo, saturacion = radio) + deslizador de brillo.
@@ -58,7 +61,7 @@ fun ColorPickerDialog(initial: Color, onDismiss: () -> Unit, onConfirm: (Color) 
     var sat by remember { mutableFloatStateOf(start[1]) }
     var value by remember { mutableFloatStateOf(start[2].coerceAtLeast(0.25f)) }
     val color = Color.hsv(hue, sat, value)
-    val shape = RoundedCornerShape(28.dp)
+    val shape = beroShape(28.dp)
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -69,7 +72,7 @@ fun ColorPickerDialog(initial: Color, onDismiss: () -> Unit, onConfirm: (Color) 
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Elige tu color", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Elige tu color", fontSize = 20.sp, fontWeight = beroWeight(FontWeight.Bold))
             Spacer(Modifier.height(16.dp))
 
             ColorWheel(
@@ -91,14 +94,14 @@ fun ColorPickerDialog(initial: Color, onDismiss: () -> Unit, onConfirm: (Color) 
                 Box(
                     Modifier
                         .size(40.dp)
-                        .clip(CircleShape)
+                        .clip(beroCircle())
                         .background(color)
-                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f), CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f), beroCircle())
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
                     "#%06X".format(color.toArgb() and 0xFFFFFF),
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = beroWeight(FontWeight.SemiBold),
                     fontSize = 16.sp
                 )
             }

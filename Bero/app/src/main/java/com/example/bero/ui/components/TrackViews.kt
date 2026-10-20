@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import com.example.bero.data.Track
 import com.example.bero.data.ViewMode
 import kotlin.math.absoluteValue
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 /**
  * Una sola entrada para mostrar canciones. [columns] = 1 es la lista normal; de 2 a 6 es una cuadricula adaptativa
@@ -152,7 +154,7 @@ private fun TrackGridCell(
     val corner = when (columns) { 2 -> 22.dp; 3 -> 18.dp; 4 -> 14.dp; 5 -> 12.dp; else -> 10.dp }
     val titleSp = when (columns) { 2 -> 14.sp; 3 -> 12.sp; 4 -> 11.sp; 5 -> 10.sp; else -> 9.sp }
     val px = when (columns) { 2 -> 420; 3 -> 320; 4 -> 240; 5 -> 200; else -> 160 }
-    val shape = RoundedCornerShape(corner)
+    val shape = beroShape(corner)
     val primary = MaterialTheme.colorScheme.primary
     Column(
         modifier
@@ -173,7 +175,7 @@ private fun TrackGridCell(
                 Box(
                     Modifier
                         .matchParentSize()
-                        .border(2.dp, primary, RoundedCornerShape(corner - 2.dp))
+                        .border(2.dp, primary, beroShape(corner - 2.dp))
                 )
             }
         }
@@ -181,7 +183,7 @@ private fun TrackGridCell(
         Text(
             track.title,
             fontSize = titleSp,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = beroWeight(FontWeight.SemiBold),
             color = if (isCurrent) primary else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -244,7 +246,7 @@ private fun TrackCarousel(
                 verticalAlignment = Alignment.CenterVertically
             ) { page ->
                 val track = tracks[page]
-                val shape = RoundedCornerShape(32.dp)
+                val shape = beroShape(32.dp)
                 Column(
                     Modifier
                         .width(cardWidth)
@@ -273,7 +275,7 @@ private fun TrackCarousel(
                     Text(
                         track.title,
                         fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = beroWeight(FontWeight.ExtraBold),
                         color = if (track.id == currentId) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurface,
                         textAlign = TextAlign.Center,

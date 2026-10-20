@@ -66,6 +66,9 @@ import com.example.bero.ui.components.ColorPickerDialog
 import com.example.bero.ui.components.GlassCard
 import com.example.bero.ui.components.ScreenHeader
 import com.example.bero.ui.components.pressable
+import com.example.bero.ui.theme.beroCircle
+import com.example.bero.ui.theme.beroWeight
+import com.example.bero.data.ThemeStyle
 
 @Composable
 fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
@@ -73,6 +76,8 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
     val mode by vm.settings.themeMode.collectAsStateWithLifecycle()
     val accentArgb by vm.settings.accentArgb.collectAsStateWithLifecycle()
     val gradient by vm.settings.gradientBackground.collectAsStateWithLifecycle()
+    val themeStyle by vm.settings.themeStyle.collectAsStateWithLifecycle()
+    val miniWave by vm.settings.miniWaveEnabled.collectAsStateWithLifecycle()
     val viewMode by vm.settings.viewMode.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     var showPicker by remember { mutableStateOf(false) }
@@ -107,6 +112,33 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // ------------------------------------------------ Estilo visual (estetica completa)
+            GlassCard(Modifier.fillMaxWidth()) {
+                SectionTitle("Estilo visual")
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ThemeStyle.entries.forEach { st ->
+                        BeroChip(st.label, selected = st == themeStyle, onClick = { vm.settings.setThemeStyle(st) })
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    themeStyle.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (themeStyle != ThemeStyle.CLASSIC) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "El modo Claro/Oscuro y el color de acento se aplican dentro de este estilo.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // ------------------------------------------------ Tema
             GlassCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Tema")
@@ -129,10 +161,10 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                         Box(
                             Modifier
                                 .size(46.dp)
-                                .pressable(CircleShape, 0.85f) { vm.settings.setAccentArgb(a.color.toArgb()) }
-                                .background(a.color, CircleShape)
+                                .pressable(beroCircle(), 0.85f) { vm.settings.setAccentArgb(a.color.toArgb()) }
+                                .background(a.color, beroCircle())
                                 .then(
-                                    if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                    if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, beroCircle())
                                     else Modifier
                                 ),
                             contentAlignment = Alignment.Center
@@ -147,10 +179,10 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                     Box(
                         Modifier
                             .size(46.dp)
-                            .pressable(CircleShape, 0.85f) { showPicker = true }
-                            .background(Brush.sweepGradient(List(7) { Color.hsv(it * 60f, 1f, 1f) }), CircleShape)
+                            .pressable(beroCircle(), 0.85f) { showPicker = true }
+                            .background(Brush.sweepGradient(List(7) { Color.hsv(it * 60f, 1f, 1f) }), beroCircle())
                             .then(
-                                if (isCustom) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                if (isCustom) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, beroCircle())
                                 else Modifier
                             ),
                         contentAlignment = Alignment.Center
@@ -246,6 +278,21 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                 }
             }
 
+            // ------------------------------------------------ Onda del mini-reproductor
+            GlassCard(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        SectionTitle("Onda en el mini-reproductor")
+                        Text(
+                            "Ondas muy sutiles de fondo que se mueven suavemente mientras suena la música.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = miniWave, onCheckedChange = { vm.settings.setMiniWaveEnabled(it) })
+                }
+            }
+
             // ------------------------------------------------ Last.fm / Smart Shuffle
             GlassCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Smart Shuffle · Last.fm")
@@ -281,7 +328,7 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                         LastFmStatus.LOADING -> "consultando…"
                         LastFmStatus.ERROR -> "error"
                     } + (lastFmMessage?.let { " · $it" } ?: ""),
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = beroWeight(FontWeight.SemiBold)
                 )
                 Spacer(Modifier.height(8.dp))
                 BeroChip("Obtener API key gratis", selected = false, onClick = {
@@ -379,7 +426,7 @@ private fun SectionTitle(text: String) {
     Text(
         text,
         fontSize = 17.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = beroWeight(FontWeight.Bold),
         modifier = Modifier.padding(bottom = 10.dp)
     )
 }

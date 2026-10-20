@@ -33,6 +33,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.bero.audio.AudioFx
 import com.example.bero.ui.components.BeroButton
 import com.example.bero.ui.components.BeroChip
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 private fun bandLabel(hz: Int): String =
     if (hz >= 1000) "%.1f kHz".format(java.util.Locale.US, hz / 1000f) else "$hz Hz"
@@ -41,7 +43,7 @@ private fun bandLabel(hz: Int): String =
 @Composable
 fun EqualizerDialog(onDismiss: () -> Unit) {
     val st by AudioFx.state.collectAsStateWithLifecycle()
-    val shape = RoundedCornerShape(28.dp)
+    val shape = beroShape(28.dp)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -60,7 +62,7 @@ fun EqualizerDialog(onDismiss: () -> Unit) {
                 Text(
                     "Ecualizador",
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = beroWeight(FontWeight.Bold),
                     modifier = Modifier.weight(1f)
                 )
                 Switch(

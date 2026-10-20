@@ -72,6 +72,8 @@ import com.example.bero.ui.components.rememberLibraryBarState
 import com.example.bero.ui.components.rememberSearchQuery
 import com.example.bero.ui.components.staggeredAppear
 import com.example.bero.data.ViewMode
+import com.example.bero.ui.theme.beroShape
+import com.example.bero.ui.theme.beroWeight
 
 private val BarHeight = LibraryBarDefaults.Height
 
@@ -181,7 +183,7 @@ fun AlbumsScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     items(shownAlbums, key = { it.id }, contentType = { "album" }) { album ->
-                        val shape = RoundedCornerShape(24.dp)
+                        val shape = beroShape(24.dp)
                         Column(
                             Modifier
                                 .animateItem()
@@ -200,7 +202,7 @@ fun AlbumsScreen(vm: BeroViewModel, onTrackMenu: (Track) -> Unit, onOpenSettings
                             Spacer(Modifier.size(8.dp))
                             Text(
                                 album.name,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = beroWeight(FontWeight.SemiBold),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -416,7 +418,7 @@ private fun FolderSectionLabel(text: String) {
     Text(
         text.uppercase(),
         fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = beroWeight(FontWeight.Bold),
         letterSpacing = 1.5.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 4.dp)
@@ -431,7 +433,7 @@ private fun FolderRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = beroShape(20.dp)
     Row(
         modifier
             .fillMaxWidth()
@@ -446,7 +448,7 @@ private fun FolderRow(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .size(52.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .clip(beroShape(14.dp))
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
                 .padding(12.dp)
         )
@@ -455,7 +457,7 @@ private fun FolderRow(
             Text(
                 name,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = beroWeight(FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
