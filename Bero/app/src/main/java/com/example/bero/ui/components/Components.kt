@@ -78,6 +78,7 @@ import com.example.bero.ui.theme.beroCircle
 import com.example.bero.ui.theme.beroWeight
 import com.example.bero.ui.theme.LocalThemeStyle
 import com.example.bero.data.ThemeStyle
+import com.example.bero.ui.theme.beroSurface
 
 fun formatTime(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)
