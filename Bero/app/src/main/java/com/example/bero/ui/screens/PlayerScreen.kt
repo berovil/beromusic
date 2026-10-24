@@ -100,6 +100,14 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import com.example.bero.ui.theme.beroShape
 import com.example.bero.ui.theme.beroWeight
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.draw.drawBehind
+import com.example.bero.data.ThemeStyle
+import com.example.bero.ui.theme.LocalArtworkTint
+import com.example.bero.ui.theme.LocalThemeStyle
+import com.example.bero.ui.theme.beroSurface
+import com.example.bero.ui.theme.contrastingOn
 
 /**
  * PlayerScreen SOLO decide el modo y el fondo. Cada bloque (barra superior, caratula, espectro,
@@ -112,12 +120,18 @@ fun PlayerScreen(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> Unit) {
     val showLyrics by vm.showLyrics.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
 
-    val primary = MaterialTheme.colorScheme.primary
-    val accent = remember(primary) { lerp(primary, Color.White, 0.25f) }
-    val background = remember(primary) {
-        val base = Color(0xFF0B0B10)
-        Brush.verticalGradient(listOf(lerp(base, primary, 0.50f), lerp(base, primary, 0.15f), base))
-    }
+    val cs = MaterialTheme.colorScheme
+    val primary = cs.primary
+    val bg = cs.background
+    val ink = cs.onBackground
+    val dark = bg.luminance() < 0.5f
+    val style = LocalThemeStyle.current
+    // Acento: sobre fondo oscuro se aclara un poco; sobre claro se usa tal cual (el tema ya garantiza contraste).
+    val accent = remember(primary, dark) { if (dark) lerp(primary, Color.White, 0.18f) else primary }
+    // Fondo: sigue el modo Claro/Oscuro; Liquid Glass lo tine con la caratula actual. Se anima y se dibuja
+    // en la fase de DIBUJO (leer `tint.value` dentro de drawBehind no recompone nada).
+    val tintTarget = if (style == ThemeStyle.LIQUID_GLASS) (LocalArtworkTint.current ?: primary) else primary
+    val tint = animateColorAsState(tintTarget, tween(800), label = "playerTint")
 
     // Atras: primero cierra la vista de letras, luego minimiza.
     BackHandler { if (showLyrics) vm.toggleLyrics() else vm.collapsePlayer() }
@@ -128,11 +142,25 @@ fun PlayerScreen(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> Unit) {
         return
     }
 
-    CompositionLocalProvider(LocalContentColor provides Color.White) {
+    CompositionLocalProvider(LocalContentColor provides ink) {
         Box(
             Modifier
                 .fillMaxSize()
-                .background(background)
+                .background(bg)
+                .drawBehind {
+                    if (style != ThemeStyle.MINIMAL) {
+                        val t = tint.value
+                        drawRect(
+                            Brush.verticalGradient(
+                                listOf(
+                                    lerp(bg, t, if (dark) 0.50f else 0.32f),
+                                    lerp(bg, t, if (dark) 0.15f else 0.10f),
+                                    bg
+                                )
+                            )
+                        )
+                    }
+                }
                 // Absorbe cualquier toque que no consuma un hijo: nada llega a las pantallas de atras.
                 .pointerInput(Unit) { detectTapGestures { } }
         ) {
@@ -166,16 +194,9 @@ private fun ColumnScope.NormalModeContent(
     onRequestMic: () -> Unit,
     onOpenQueue: () -> Unit,
 ) {
-    // Color del tema, aclarado hasta contrastar con el fondo oscuro del reproductor.
-    val spectrumColor = remember(accent) {
-        var c = accent
-        var i = 0
-        while (c.luminance() < 0.55f && i < 10) {
-            c = lerp(c, Color.White, 0.12f)
-            i++
-        }
-        c
-    }
+    // Color del tema ajustado para contrastar con el fondo real (se aclara sobre oscuro, se oscurece sobre claro).
+    val bgColor = MaterialTheme.colorScheme.background
+    val spectrumColor = remember(accent, bgColor) { contrastingOn(accent, bgColor) }
 
     PlayerTopBar(
         vm = vm,
@@ -205,9 +226,7 @@ private fun ColumnScope.NormalModeContent(
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .padding(bottom = 12.dp)
-            .clip(panelShape)
-            .background(Color.White.copy(alpha = 0.07f))
-            .border(1.dp, Color.White.copy(alpha = 0.10f), panelShape)
+            .beroSurface(panelShape, alpha = 0.6f)
             .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp)
     ) {
         PanelTopRow(vm, accent, onOpenQueue)
@@ -222,7 +241,7 @@ private fun ColumnScope.NormalModeContent(
         Text(
             current.artist,
             fontSize = 16.sp,
-            color = Color.White.copy(alpha = 0.70f),
+            color = fg.copy(alpha = 0.70f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -324,7 +343,7 @@ private fun PlayerTopBar(
             contentDescription = "Minimizar",
             onClick = vm::collapsePlayer,
             accent = accent,
-            tint = Color.White
+            tint = fg
         )
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
@@ -332,7 +351,7 @@ private fun PlayerTopBar(
                 fontSize = if (spaced) 12.sp else 16.sp,
                 fontWeight = beroWeight(FontWeight.Bold),
                 letterSpacing = if (spaced) 2.sp else 0.sp,
-                color = Color.White.copy(alpha = if (spaced) 0.85f else 1f),
+                color = fg.copy(alpha = if (spaced) 0.85f else 1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -341,7 +360,7 @@ private fun PlayerTopBar(
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = Color.White.copy(alpha = 0.55f)
+                color = fg.copy(alpha = 0.55f)
             )
         }
         BeroIconButton(
@@ -350,7 +369,7 @@ private fun PlayerTopBar(
             onClick = onIcon,
             active = iconActive,
             accent = accent,
-            tint = Color.White
+            tint = fg
         )
     }
 }
@@ -447,7 +466,7 @@ private fun PanelTopRow(vm: BeroViewModel, accent: Color, onOpenQueue: () -> Uni
     val style by vm.settings.visualizerStyle.collectAsStateWithLifecycle()
     var showStyles by remember { mutableStateOf(false) }
     val latestOpen by rememberUpdatedState(onOpenQueue)
-    val dim = Color.White.copy(alpha = 0.75f)
+    val dim = fg.copy(alpha = 0.75f)
 
     Row(
         Modifier
@@ -492,7 +511,7 @@ private fun PanelTopRow(vm: BeroViewModel, accent: Color, onOpenQueue: () -> Uni
                 Modifier
                     .size(width = 38.dp, height = 4.dp)
                     .clip(beroShape(2.dp))
-                    .background(Color.White.copy(alpha = 0.35f))
+                    .background(fg.copy(alpha = 0.35f))
             )
         }
         if (enabled) {
@@ -578,7 +597,7 @@ private fun PlayerSeekBar(vm: BeroViewModel, trackDurationMs: Long, accent: Colo
             colors = SliderDefaults.colors(
                 thumbColor = accent,
                 activeTrackColor = accent,
-                inactiveTrackColor = Color.White.copy(alpha = 0.20f)
+                inactiveTrackColor = fg.copy(alpha = 0.20f)
             )
         )
         TimeRow(positionState, duration, dragging, dragFraction)
@@ -599,8 +618,8 @@ private fun TimeRow(position: State<Long>, durationMs: Long, dragging: Boolean, 
             .padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(formatTime(shownSecond * 1000), fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-        Text(formatTime(durationMs), fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+        Text(formatTime(shownSecond * 1000), fontSize = 12.sp, color = fg.copy(alpha = 0.7f))
+        Text(formatTime(durationMs), fontSize = 12.sp, color = fg.copy(alpha = 0.7f))
     }
 }
 
@@ -622,7 +641,7 @@ private fun MainControls(vm: BeroViewModel, accent: Color) {
             size = 68.dp,
             iconSize = 40.dp,
             accent = accent,
-            tint = Color.White
+            tint = fg
         )
         BigPlayButton(
             icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -637,7 +656,7 @@ private fun MainControls(vm: BeroViewModel, accent: Color) {
             size = 68.dp,
             iconSize = 40.dp,
             accent = accent,
-            tint = Color.White
+            tint = fg
         )
     }
 }
@@ -653,7 +672,7 @@ private fun SecondaryControls(vm: BeroViewModel, track: Track, accent: Color) {
     val favState = vm.favorites.ids.collectAsStateWithLifecycle()
     var showEq by remember { mutableStateOf(false) }
     var shuffleMenu by remember { mutableStateOf(false) }
-    val dim = Color.White.copy(alpha = 0.8f)
+    val dim = fg.copy(alpha = 0.8f)
 
     Row(
         Modifier
@@ -733,3 +752,9 @@ private fun SecondaryControls(vm: BeroViewModel, track: Track, accent: Color) {
 
     if (showEq) EqualizerDialog(onDismiss = { showEq = false })
 }
+
+/** Color de contenido del reproductor: SIGUE el modo Claro/Oscuro del tema (antes estaba fijo en blanco). */
+private val fg: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalContentColor.current

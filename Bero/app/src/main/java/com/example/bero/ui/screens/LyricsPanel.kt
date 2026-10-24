@@ -33,6 +33,8 @@ import com.example.bero.ui.components.pressable
 import kotlin.math.abs
 import com.example.bero.ui.theme.beroShape
 import com.example.bero.ui.theme.beroWeight
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.ReadOnlyComposable
 
 /** Letras estilo Apple Music: izquierda, grandes y gruesas; la linea actual brilla; tocar una linea hace seekTo. */
 @Composable
@@ -50,7 +52,7 @@ fun LyricsPanel(
         LyricsState.NotFound -> Box(modifier, contentAlignment = Alignment.Center) {
             Text(
                 "No se encontró letra para esta canción",
-                color = Color.White.copy(alpha = 0.7f),
+                color = fg.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(24.dp)
             )
@@ -103,7 +105,7 @@ private fun LyricLines(
                 else -> (0.55f - 0.10f * (abs(index - current) - 1)).coerceIn(0.2f, 0.55f)
             }
             val color by animateColorAsState(
-                targetValue = if (isCurrent) accent else Color.White.copy(alpha = dimAlpha),
+                targetValue = if (isCurrent) accent else fg.copy(alpha = dimAlpha),
                 label = "lyricColor"
             )
             val glow = if (isCurrent) Shadow(color = accent.copy(alpha = 0.55f), blurRadius = 28f) else null
@@ -126,3 +128,9 @@ private fun LyricLines(
         }
     }
 }
+
+/** Color de contenido del reproductor: SIGUE el modo Claro/Oscuro del tema (antes estaba fijo en blanco). */
+private val fg: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalContentColor.current

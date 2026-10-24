@@ -29,6 +29,43 @@ object ArtworkLoader {
 
     fun peek(track: Track, px: Int): Bitmap? = cache.get(key(track, px))
 
+    private val tintCache = ConcurrentHashMap<Long, Int>()
+
+    /**
+     * Color dominante vivo de la caratula (para el fondo dinamico de Liquid Glass). Pondera cada pixel por
+     * saturacion x brillo para evitar grises/negros; se calcula una vez por pista, en Dispatchers.Default.
+     */
+    suspend fun dominantColor(context: Context, track: Track): Int? {
+        tintCache[track.id]?.let { return it }
+        val bmp = load(context, track, 64) ?: return null
+        val result = withContext(Dispatchers.Default) {
+            val w = bmp.width
+            val h = bmp.height
+            val pixels = IntArray(w * h)
+            bmp.getPixels(pixels, 0, w, 0, 0, w, h)
+            val hsv = FloatArray(3)
+            var r = 0.0
+            var g = 0.0
+            var b = 0.0
+            var sum = 0.0
+            for (p in pixels) {
+                android.graphics.Color.colorToHSV(p, hsv)
+                val weight = (hsv[1] * hsv[2]).toDouble().let { it * it } + 0.01
+                r += android.graphics.Color.red(p) * weight
+                g += android.graphics.Color.green(p) * weight
+                b += android.graphics.Color.blue(p) * weight
+                sum += weight
+            }
+            val avg = android.graphics.Color.rgb((r / sum).toInt(), (g / sum).toInt(), (b / sum).toInt())
+            android.graphics.Color.colorToHSV(avg, hsv)
+            hsv[1] = hsv[1].coerceAtLeast(0.35f) // siempre algo de color
+            hsv[2] = hsv[2].coerceIn(0.45f, 0.95f)
+            android.graphics.Color.HSVToColor(hsv)
+        }
+        tintCache[track.id] = result
+        return result
+    }
+
     /** Respuesta a onTrimMemory: UI oculta => mitad de la cache; memoria critica o proceso en segundo plano => todo. */
     fun trim(level: Int) {
         when {

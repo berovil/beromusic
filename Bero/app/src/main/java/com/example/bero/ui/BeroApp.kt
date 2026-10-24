@@ -106,6 +106,7 @@ import com.example.bero.ui.components.MiniPlayerWave
 import com.example.bero.ui.theme.LocalThemeStyle
 import com.example.bero.ui.theme.beroShapeTop
 import com.example.bero.ui.theme.beroSurface
+import com.example.bero.ui.screens.ThemeStyleScreen
 
 enum class MainTab(val label: String, val icon: ImageVector) {
     Tracks("Pistas", Icons.Rounded.QueueMusic),
@@ -211,6 +212,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
     val ctx = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(MainTab.Tracks) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showStyles by rememberSaveable { mutableStateOf(false) }
 
     // Menu contextual (pulsacion larga) y sus acciones
     var menuTrack by remember { mutableStateOf<Track?>(null) }
@@ -266,6 +268,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
 
     // Orden de registro: el ultimo en componerse tiene prioridad (jugador > editor > ajustes).
     BackHandler(enabled = showSettings && !expanded) { showSettings = false }
+    BackHandler(enabled = showStyles && !expanded) { showStyles = false }
     BackHandler(enabled = editorOpen && !expanded) { editorOpen = false }
 
     Box(
@@ -322,7 +325,15 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
             enter = slideInHorizontally { it },
             exit = slideOutHorizontally { it }
         ) {
-            SettingsScreen(vm, onBack = { showSettings = false })
+            SettingsScreen(vm, onBack = { showSettings = false }, onOpenStyles = { showStyles = true })
+        }
+
+        AnimatedVisibility(
+            visible = showStyles,
+            enter = slideInHorizontally { it },
+            exit = slideOutHorizontally { it }
+        ) {
+            ThemeStyleScreen(vm, onBack = { showStyles = false })
         }
 
         AnimatedVisibility(

@@ -243,7 +243,8 @@ fun BeroChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Mo
         else -> if (selected) cs.primary.copy(alpha = 0.22f) else cs.surfaceVariant
     }
     val borderColor = when (style) {
-        ThemeStyle.MINIMAL -> Color.Transparent
+        // Minimalista: sin relleno, pero con un trazo fino para que SE VEA que es un boton
+        ThemeStyle.MINIMAL -> if (selected) cs.primary else cs.outline.copy(alpha = 0.6f)
         ThemeStyle.PIXEL -> if (selected) cs.primary else cs.outline.copy(alpha = 0.6f)
         else -> if (selected) cs.primary else Color.Transparent
     }

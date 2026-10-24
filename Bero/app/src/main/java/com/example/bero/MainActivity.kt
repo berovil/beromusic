@@ -7,8 +7,10 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.bero.data.ArtworkLoader
@@ -30,22 +32,34 @@ class MainActivity : ComponentActivity() {
             val accentArgb by vm.settings.accentArgb.collectAsStateWithLifecycle()
             val gradient by vm.settings.gradientBackground.collectAsStateWithLifecycle()
             val style by vm.settings.themeStyle.collectAsStateWithLifecycle()
-            val expanded by vm.playerExpanded.collectAsStateWithLifecycle()
+            val tintArgb by vm.artworkTint.collectAsStateWithLifecycle()
 
-            // El reproductor siempre es oscuro: iconos de barra claros aunque el tema sea "Claro".
-            val darkBars = mode != ThemeMode.LIGHT || expanded
-            DisposableEffect(darkBars) {
+            // Sistema / Claro / Oscuro -> un unico Boolean. `remember` con claves: solo se recalcula si cambia el modo
+            // o el tema del sistema; el resto de la app NO depende del modo elegido, solo de este resultado.
+            val systemDark = isSystemInDarkTheme()
+            val dark = remember(mode, systemDark) {
+                when (mode) {
+                    ThemeMode.SYSTEM -> systemDark
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.DARK -> true
+                }
+            }
+            val accent = remember(accentArgb) { Color(accentArgb) }
+            val tint = remember(tintArgb) { tintArgb?.let { Color(it) } }
+
+            // Iconos de las barras del sistema segun el modo (el reproductor ya sigue el mismo modo).
+            DisposableEffect(dark) {
                 val transparent = android.graphics.Color.TRANSPARENT
-                val style = if (darkBars) {
+                val barStyle = if (dark) {
                     SystemBarStyle.dark(transparent)
                 } else {
                     SystemBarStyle.light(transparent, transparent)
                 }
-                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
                 onDispose { }
             }
 
-            BeroTheme(mode = mode, accent = Color(accentArgb), gradient = gradient, style = style) {
+            BeroTheme(dark = dark, accent = accent, gradient = gradient, style = style, artworkTint = tint) {
                 BeroApp(vm)
             }
         }

@@ -18,6 +18,8 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.bero.BuildConfig
 import com.example.bero.data.AlbumItem
+import com.example.bero.data.ArtworkLoader
+import com.example.bero.data.ThemeStyle
 import com.example.bero.data.EXTRA_SUGGESTED
 import com.example.bero.data.DownloadResult
 import com.example.bero.data.FavoritesStore
@@ -63,6 +65,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -174,6 +177,17 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _currentTrack = MutableStateFlow<Track?>(null)
     val currentTrack: StateFlow<Track?> = _currentTrack.asStateFlow()
+
+    /**
+     * Color dominante de la caratula actual (ARGB). SOLO se calcula con el estilo Liquid Glass; en los demas
+     * estilos vale null y no se hace ningun trabajo. Se cancela y recalcula al cambiar de cancion (en Default).
+     */
+    val artworkTint: StateFlow<Int?> = combine(_currentTrack, settings.themeStyle) { track, style ->
+        if (style == ThemeStyle.LIQUID_GLASS) track else null
+    }
+        .distinctUntilChanged()
+        .mapLatest { track -> if (track == null) null else ArtworkLoader.dominantColor(ctx, track) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** Para la UI que solo necesita saber si hay pista: no se recompone en cada cambio de cancion. */
     val hasTrack: StateFlow<Boolean> = _currentTrack.map { it != null }

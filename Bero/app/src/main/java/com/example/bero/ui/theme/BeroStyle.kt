@@ -9,13 +9,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -32,7 +35,7 @@ fun cornerShape(style: ThemeStyle, radius: Dp): CornerBasedShape = when (style) 
     ThemeStyle.CLASSIC -> RoundedCornerShape(radius)
     ThemeStyle.MINIMAL -> RoundedCornerShape(radius * 0.5f) // lineas simples, esquinas discretas
     ThemeStyle.PIXEL -> CutCornerShape(if (radius <= 4.dp) 0.dp else minOf(radius * 0.4f, 8.dp))
-    ThemeStyle.PASTEL -> RoundedCornerShape(radius * 1.5f) // casi pildora
+    ThemeStyle.LIQUID_GLASS -> RoundedCornerShape(radius * 1.25f) // cristal: curvas amplias y continuas
 }
 
 fun styledShape(style: ThemeStyle, radius: Dp): Shape = cornerShape(style, radius)
@@ -55,7 +58,7 @@ fun beroShapeTop(radius: Dp): Shape = when (LocalThemeStyle.current) {
     ThemeStyle.CLASSIC -> RoundedCornerShape(topStart = radius, topEnd = radius)
     ThemeStyle.MINIMAL -> RectangleShape
     ThemeStyle.PIXEL -> CutCornerShape(topStart = minOf(radius * 0.4f, 8.dp), topEnd = minOf(radius * 0.4f, 8.dp))
-    ThemeStyle.PASTEL -> RoundedCornerShape(topStart = radius * 1.5f, topEnd = radius * 1.5f)
+    ThemeStyle.LIQUID_GLASS -> RoundedCornerShape(topStart = radius * 1.25f, topEnd = radius * 1.25f)
 }
 
 @Composable
@@ -64,10 +67,10 @@ fun beroShapeBottom(radius: Dp): Shape = when (LocalThemeStyle.current) {
     ThemeStyle.CLASSIC -> RoundedCornerShape(bottomStart = radius, bottomEnd = radius)
     ThemeStyle.MINIMAL -> RectangleShape
     ThemeStyle.PIXEL -> CutCornerShape(bottomStart = minOf(radius * 0.4f, 8.dp), bottomEnd = minOf(radius * 0.4f, 8.dp))
-    ThemeStyle.PASTEL -> RoundedCornerShape(bottomStart = radius * 1.5f, bottomEnd = radius * 1.5f)
+    ThemeStyle.LIQUID_GLASS -> RoundedCornerShape(bottomStart = radius * 1.25f, bottomEnd = radius * 1.25f)
 }
 
-/** Minimalista: titulos finos y limpios. Pixel/Pastel: el peso mas extremo se modera. */
+/** Minimalista: titulos finos y limpios. Pixel y Liquid Glass: el peso mas extremo se modera. */
 @Composable
 @ReadOnlyComposable
 fun beroWeight(base: FontWeight): FontWeight = when (LocalThemeStyle.current) {
@@ -77,7 +80,7 @@ fun beroWeight(base: FontWeight): FontWeight = when (LocalThemeStyle.current) {
         else -> base
     }
 
-    ThemeStyle.PIXEL, ThemeStyle.PASTEL -> if (base.weight >= 800) FontWeight.Bold else base
+    ThemeStyle.PIXEL, ThemeStyle.LIQUID_GLASS -> if (base.weight >= 800) FontWeight.Bold else base
     ThemeStyle.CLASSIC -> base
 }
 
@@ -86,7 +89,10 @@ fun beroWeight(base: FontWeight): FontWeight = when (LocalThemeStyle.current) {
  *  - Clasico: translucida con borde fino;
  *  - Minimalista: SIN tarjeta, borde ni sombra (solo se rellena con el fondo si [solidWhenMinimal], p. ej. barras fijas);
  *  - Pixel: color solido y borde grueso ortogonal;
- *  - Pastel: color solido con sombra difuminada y suave.
+ *  - Liquid Glass: cristal esmerilado — relleno translucido con degradado de luz, borde brillante de 1 dp y sombra
+ *    suave. (Compose no puede difuminar lo que hay DETRAS de un elemento, asi que el efecto se consigue con capas
+ *    translucidas sobre el degradado que toma el color de la caratula.) Con [solidWhenMinimal] las barras fijas
+ *    llevan ademas una base opaca para que la lista que pasa por debajo no moleste.
  */
 @Composable
 fun Modifier.beroSurface(
@@ -113,15 +119,36 @@ fun Modifier.beroSurface(
             .background(color)
             .border(3.dp, if (bordered) cs.primary else cs.outline, shape)
 
-        ThemeStyle.PASTEL -> this
-            .shadow(
-                elevation = elevation,
-                shape = shape,
-                ambientColor = cs.primary.copy(alpha = 0.30f),
-                spotColor = cs.primary.copy(alpha = 0.30f)
-            )
-            .clip(shape)
-            .background(color)
+        ThemeStyle.LIQUID_GLASS -> {
+            val dark = cs.background.luminance() < 0.5f
+            val fill = remember(dark) {
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = if (dark) 0.16f else 0.72f),
+                        Color.White.copy(alpha = if (dark) 0.06f else 0.42f)
+                    )
+                )
+            }
+            val edge = remember(dark) {
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = if (dark) 0.42f else 0.95f),
+                        Color.White.copy(alpha = if (dark) 0.08f else 0.30f)
+                    )
+                )
+            }
+            val lifted = this
+                .shadow(
+                    elevation = 14.dp,
+                    shape = shape,
+                    ambientColor = Color.Black.copy(alpha = 0.25f),
+                    spotColor = Color.Black.copy(alpha = 0.25f)
+                )
+                .clip(shape)
+            (if (solidWhenMinimal) lifted.background(cs.background.copy(alpha = 0.86f)) else lifted)
+                .background(fill)
+                .border(1.dp, edge, shape)
+        }
     }
 }
 

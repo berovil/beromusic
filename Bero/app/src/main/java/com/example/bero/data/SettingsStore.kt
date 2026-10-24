@@ -8,10 +8,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/** Modo de color: independiente del estilo visual. */
 enum class ThemeMode(val label: String) {
+    SYSTEM("Seguir al sistema"),
     LIGHT("Claro"),
     DARK("Oscuro"),
-    COLOR("Color"),
 }
 
 /** Estetica COMPLETA de la app: colores, formas, tipografia, bordes y sombras (no solo el color de acento). */
@@ -19,7 +20,7 @@ enum class ThemeStyle(val label: String, val description: String) {
     CLASSIC("Clásico", "Tu color de acento, tarjetas translúcidas y esquinas redondeadas."),
     MINIMAL("Minimalista", "Estilo Niagara: negro o blanco puros, sin tarjetas ni bordes, tipografía ligera y mucho espacio."),
     PIXEL("Pixel", "Retro 8-bit: colores saturados, esquinas cortadas, bordes gruesos y tipografía monoespaciada."),
-    PASTEL("Pastel", "Tonos suaves de lavanda, menta y durazno, formas de píldora y sombras difuminadas."),
+    LIQUID_GLASS("Liquid Glass", "Estilo Apple Music: cristal esmerilado translúcido, degradados que toman el color de la carátula y colores vibrantes."),
 }
 
 enum class ShuffleMode { OFF, ON, SMART }
@@ -57,11 +58,25 @@ class SettingsStore(context: Context) {
     private inline fun <reified E : Enum<E>> readEnum(key: String, default: E): E =
         runCatching { enumValueOf<E>(prefs.getString(key, "") ?: "") }.getOrDefault(default)
 
-    private val _themeMode = MutableStateFlow(readEnum("theme", ThemeMode.DARK))
+    // Migracion: el antiguo modo "COLOR" pasa a Oscuro + fondo con degradado; "PASTEL" pasa a Liquid Glass.
+    private val legacyTheme = prefs.getString("theme", "") ?: ""
+
+    private val _themeMode = MutableStateFlow(
+        when (legacyTheme) {
+            "LIGHT" -> ThemeMode.LIGHT
+            "DARK", "COLOR" -> ThemeMode.DARK
+            else -> ThemeMode.SYSTEM
+        }
+    )
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
     // Migracion: antes se guardaba el NOMBRE del color; ahora se guarda el ARGB libre.
-    private val _themeStyle = MutableStateFlow(readEnum("theme_style", ThemeStyle.CLASSIC))
+    private val _themeStyle = MutableStateFlow(
+        when (val raw = prefs.getString("theme_style", "") ?: "") {
+            "PASTEL", "LIQUID_GLASS" -> ThemeStyle.LIQUID_GLASS
+            else -> runCatching { ThemeStyle.valueOf(raw) }.getOrDefault(ThemeStyle.CLASSIC)
+        }
+    )
     val themeStyle: StateFlow<ThemeStyle> = _themeStyle.asStateFlow()
 
     /** Onda sutil animada de fondo en el mini-reproductor. */
@@ -77,7 +92,7 @@ class SettingsStore(context: Context) {
     )
     val accentArgb: StateFlow<Int> = _accentArgb.asStateFlow()
 
-    private val _gradient = MutableStateFlow(prefs.getBoolean("gradient_bg", false))
+    private val _gradient = MutableStateFlow(prefs.getBoolean("gradient_bg", legacyTheme == "COLOR"))
     val gradientBackground: StateFlow<Boolean> = _gradient.asStateFlow()
 
     // Migracion desde las versiones anteriores (LIST / GRID_3 / GRID_4 / CAROUSEL).

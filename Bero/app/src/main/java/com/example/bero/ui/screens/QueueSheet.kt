@@ -69,6 +69,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import com.example.bero.ui.theme.beroShape
 import com.example.bero.ui.theme.beroWeight
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.ReadOnlyComposable
 
 private val RowHeight = 68.dp
 
@@ -83,8 +86,8 @@ fun QueueSheet(vm: BeroViewModel, accent: Color, onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(0xFF14141A),
-        contentColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         QueueContent(vm, queue, external, accent)
     }
@@ -144,7 +147,7 @@ private fun QueueContent(
                 Text(
                     "Mantén pulsada una canción y arrástrala para reordenarla",
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.6f)
+                    color = fg.copy(alpha = 0.6f)
                 )
             }
             // Remezcla lo que queda por sonar (en Smart Shuffle vuelve a intercalar sugerencias).
@@ -153,7 +156,7 @@ private fun QueueContent(
                 contentDescription = "Mezclar la fila",
                 onClick = vm::reshuffleUpcoming,
                 accent = accent,
-                tint = Color.White
+                tint = fg
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -187,7 +190,7 @@ private fun QueueContent(
                                 Text(
                                     current.artist,
                                     fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = fg.copy(alpha = 0.6f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -212,7 +215,7 @@ private fun QueueContent(
                     Text(
                         "+${queue.hiddenCount} canciones más en la fila",
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = fg.copy(alpha = 0.5f),
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
                     )
                 }
@@ -225,7 +228,7 @@ private fun QueueContent(
                         Text(
                             "No están en tu biblioteca, así que no se pueden reproducir aquí. Tócalas para abrir su ficha en Last.fm.",
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = fg.copy(alpha = 0.5f),
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp)
                         )
                     }
@@ -245,7 +248,7 @@ private fun SectionLabel(text: String) {
         fontSize = 11.sp,
         fontWeight = beroWeight(FontWeight.Bold),
         letterSpacing = 1.5.sp,
-        color = Color.White.copy(alpha = 0.55f),
+        color = fg.copy(alpha = 0.55f),
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 6.dp)
     )
 }
@@ -281,7 +284,7 @@ private fun LazyItemScope.QueueRow(
             .height(RowHeight)
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(shape)
-            .background(if (isDragging) Color.White.copy(alpha = 0.16f) else Color.Transparent)
+            .background(if (isDragging) fg.copy(alpha = 0.16f) else Color.Transparent)
             // Toque = reproducir esta pista. (Tras una pulsacion larga el toque no se dispara.)
             .pointerInput(entry.key) { detectTapGestures(onTap = { latestOnPlay() }) }
             // Mantener pulsado y arrastrar = reordenar.
@@ -314,7 +317,7 @@ private fun LazyItemScope.QueueRow(
             Text(
                 entry.track.artist,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.6f),
+                color = fg.copy(alpha = 0.6f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -332,7 +335,7 @@ private fun LazyItemScope.QueueRow(
         Icon(
             Icons.Rounded.DragHandle,
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.35f),
+            tint = fg.copy(alpha = 0.35f),
             modifier = Modifier.padding(end = 4.dp)
         )
     }
@@ -359,7 +362,7 @@ private fun ExternalRow(suggestion: ExternalSuggestion, accent: Color, onOpen: (
             Text(
                 suggestion.artist,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.6f),
+                color = fg.copy(alpha = 0.6f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -451,3 +454,9 @@ private class ReorderState(
         if (from >= 0 && to >= 0 && from != to) onDrop(from, to)
     }
 }
+
+/** Color de contenido del reproductor: SIGUE el modo Claro/Oscuro del tema (antes estaba fijo en blanco). */
+private val fg: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalContentColor.current

@@ -69,9 +69,11 @@ import com.example.bero.ui.components.pressable
 import com.example.bero.ui.theme.beroCircle
 import com.example.bero.ui.theme.beroWeight
 import com.example.bero.data.ThemeStyle
+import androidx.compose.material.icons.rounded.ChevronRight
+import com.example.bero.ui.theme.beroShape
 
 @Composable
-fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit, onOpenStyles: () -> Unit) {
     val ctx = LocalContext.current
     val mode by vm.settings.themeMode.collectAsStateWithLifecycle()
     val accentArgb by vm.settings.accentArgb.collectAsStateWithLifecycle()
@@ -112,46 +114,38 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // ------------------------------------------------ Estilo visual (estetica completa)
+            // ================================================ APARIENCIA
+            GroupLabel("Apariencia")
+
+            // ---- 1) Modo de sistema (independiente del estilo)
             GlassCard(Modifier.fillMaxWidth()) {
-                SectionTitle("Estilo visual")
+                SectionTitle("Modo")
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ThemeStyle.entries.forEach { st ->
-                        BeroChip(st.label, selected = st == themeStyle, onClick = { vm.settings.setThemeStyle(st) })
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    themeStyle.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (themeStyle != ThemeStyle.CLASSIC) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "El modo Claro/Oscuro y el color de acento se aplican dentro de este estilo.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // ------------------------------------------------ Tema
-            GlassCard(Modifier.fillMaxWidth()) {
-                SectionTitle("Tema")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ThemeMode.entries.forEach { m ->
                         BeroChip(m.label, selected = m == mode, onClick = { vm.settings.setThemeMode(m) })
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Claro, oscuro o el mismo que tu teléfono. Afecta a TODA la app, incluido el reproductor y la fila.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
+            // ---- 2) Color de acento (selector libre)
             // ------------------------------------------------ Color de acento (selector libre)
             GlassCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Color de acento")
+                Text(
+                    "Personaliza el estilo Clásico; en los demás estilos es la base de su paleta.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -198,20 +192,51 @@ fun SettingsScreen(vm: BeroViewModel, onBack: () -> Unit) {
                 )
             }
 
-            // ------------------------------------------------ Fondo con degradado
-            GlassCard(Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        SectionTitle("Fondo con degradado")
-                        Text(
-                            "Un degradado sutil basado en tu color en el fondo de la app, con contraste cuidado.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+            // ---- 3) Estilo de tema: seccion aparte (subpantalla)
+            Box(Modifier.pressable(beroShape(28.dp), 0.98f, onOpenStyles)) {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            SectionTitle("Estilo de tema")
+                            Text(
+                                themeStyle.label,
+                                fontWeight = beroWeight(FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                themeStyle.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            Icons.Rounded.ChevronRight,
+                            contentDescription = "Elegir estilo",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(checked = gradient, onCheckedChange = { vm.settings.setGradientBackground(it) })
                 }
             }
+
+            // ------------------------------------------------ Fondo con degradado
+            if (themeStyle == ThemeStyle.CLASSIC || themeStyle == ThemeStyle.PIXEL) {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            SectionTitle("Fondo con degradado")
+                            Text(
+                                "Un degradado sutil basado en tu color en el fondo de la app, con contraste cuidado.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = gradient, onCheckedChange = { vm.settings.setGradientBackground(it) })
+                    }
+                }
+            }
+
+            // ================================================ BIBLIOTECA Y REPRODUCCION
+            GroupLabel("Biblioteca y reproducción")
 
             // ------------------------------------------------ Vista de listas
             GlassCard(Modifier.fillMaxWidth()) {
@@ -441,3 +466,15 @@ private fun safeStart(ctx: android.content.Context, intent: Intent): Boolean =
     } catch (e: Exception) {
         false
     }
+
+@Composable
+private fun GroupLabel(text: String) {
+    Text(
+        text.uppercase(),
+        fontSize = 12.sp,
+        fontWeight = beroWeight(FontWeight.Bold),
+        letterSpacing = 1.5.sp,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+    )
+}
