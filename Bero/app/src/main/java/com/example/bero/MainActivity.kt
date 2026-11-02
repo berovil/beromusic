@@ -19,6 +19,7 @@ import com.example.bero.ui.BeroApp
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.RemoteArtLoader
 import com.example.bero.ui.theme.BeroTheme
+import com.example.bero.ui.theme.GlassConfig
 
 class MainActivity : ComponentActivity() {
 
@@ -33,6 +34,10 @@ class MainActivity : ComponentActivity() {
             val gradient by vm.settings.gradientBackground.collectAsStateWithLifecycle()
             val style by vm.settings.themeStyle.collectAsStateWithLifecycle()
             val tintArgb by vm.artworkTint.collectAsStateWithLifecycle()
+            val glassQuality by vm.settings.glassQuality.collectAsStateWithLifecycle()
+            val glassFilm by vm.settings.glassFilm.collectAsStateWithLifecycle()
+            val glassFrost by vm.settings.glassFrost.collectAsStateWithLifecycle()
+            val glass = remember(glassQuality, glassFilm, glassFrost) { GlassConfig(glassQuality, glassFilm, glassFrost) }
 
             // Sistema / Claro / Oscuro -> un unico Boolean. `remember` con claves: solo se recalcula si cambia el modo
             // o el tema del sistema; el resto de la app NO depende del modo elegido, solo de este resultado.
@@ -59,7 +64,7 @@ class MainActivity : ComponentActivity() {
                 onDispose { }
             }
 
-            BeroTheme(dark = dark, accent = accent, gradient = gradient, style = style, artworkTint = tint) {
+            BeroTheme(dark = dark, accent = accent, gradient = gradient, style = style, artworkTint = tint, glass = glass) {
                 BeroApp(vm)
             }
         }

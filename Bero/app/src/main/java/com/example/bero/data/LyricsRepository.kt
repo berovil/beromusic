@@ -14,8 +14,13 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
+/** Palabra con tiempo propio: [charStart] es el indice (en [LyricLine.text]) donde empieza; termina donde empieza la siguiente. */
 @Immutable
-data class LyricLine(val timeMs: Long, val text: String)
+data class LyricWord(val startMs: Long, val charStart: Int)
+
+/** [words] solo existe cuando la fuente trae tiempos por palabra (LRC enriquecido); si es null la linea se sincroniza entera. */
+@Immutable
+data class LyricLine(val timeMs: Long, val text: String, val words: List<LyricWord>? = null)
 
 sealed interface LyricsState {
     data object Idle : LyricsState
@@ -36,6 +41,18 @@ enum class DownloadResult { SAVED_NEXT_TO_AUDIO, SAVED_IN_APP, NOT_FOUND, FAILED
 
 object LrcParser {
     private val TIME_TAG = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
+    private val WORD_TAG = Regex("""<(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?>""")
+
+    private fun toMs(min: String, sec: String, fracText: String): Long {
+        val frac = if (fracText.isEmpty()) 0L else fracText.toLong()
+        val ms = when (fracText.length) {
+            0 -> 0L
+            1 -> frac * 100
+            2 -> frac * 10
+            else -> frac
+        }
+        return min.toLong() * 60_000 + sec.toLong() * 1_000 + ms
+    }
 
     /** Devuelve las lineas con marca de tiempo, ordenadas. Vacio si el texto no es LRC. */
     fun parse(text: String): List<LyricLine> {
@@ -44,23 +61,67 @@ object LrcParser {
             val line = raw.trim()
             val matches = TIME_TAG.findAll(line).toList()
             if (matches.isEmpty()) continue
-            val content = line.substring(matches.last().range.last + 1).trim()
+            val content = line.substring(matches.last().range.last + 1)
+            // Los tiempos por palabra son absolutos: solo valen si la linea tiene UNA marca de linea
+            // (con varias, la misma letra se repite en otros momentos y las palabras no corresponderian).
+            val parsed = if (matches.size == 1) parseWords(content) else null
+            val plain = parsed?.first ?: WORD_TAG.replace(content, "").trim()
             for (m in matches) {
-                val min = m.groupValues[1].toLong()
-                val sec = m.groupValues[2].toLong()
-                val fracText = m.groupValues[3]
-                val frac = if (fracText.isEmpty()) 0L else fracText.toLong()
-                val ms = when (fracText.length) {
-                    0 -> 0L
-                    1 -> frac * 100
-                    2 -> frac * 10
-                    else -> frac
-                }
-                out.add(LyricLine(min * 60_000 + sec * 1_000 + ms, content))
+                val t = toMs(m.groupValues[1], m.groupValues[2], m.groupValues[3])
+                out.add(LyricLine(t, plain, parsed?.second))
             }
         }
         return out.sortedBy { it.timeMs }
     }
+
+    /** Texto limpio + palabras con su tiempo, o null si la linea no trae marcas <mm:ss.xx>. */
+    private fun parseWords(content: String): Pair<String, List<LyricWord>>? {
+        val tags = WORD_TAG.findAll(content).toList()
+        if (tags.isEmpty()) return null
+        val sb = StringBuilder(content.substring(0, tags[0].range.first))
+        val starts = ArrayList<Pair<Long, Int>>(tags.size)
+        for ((i, m) in tags.withIndex()) {
+            val segEnd = if (i + 1 < tags.size) tags[i + 1].range.first else content.length
+            starts.add(toMs(m.groupValues[1], m.groupValues[2], m.groupValues[3]) to sb.length)
+            sb.append(content, m.range.last + 1, segEnd)
+        }
+        val full = sb.toString()
+        val lead = full.length - full.trimStart().length
+        val text = full.trim()
+        if (text.isEmpty()) return null
+        val words = starts
+            .map { LyricWord(it.first, (it.second - lead).coerceIn(0, text.length)) }
+            .sortedBy { it.startMs }
+        return text to words
+    }
+
+    /**
+     * Cuantos caracteres de [LyricLine.text] ya "se han cantado" en [posMs] (fraccionario, para el relleno
+     * progresivo). Sin tiempos por palabra devuelve la longitud completa (la linea se trata como un bloque).
+     */
+    fun revealChars(lines: List<LyricLine>, index: Int, posMs: Long): Float {
+        val line = lines.getOrNull(index) ?: return 0f
+        val words = line.words ?: return line.text.length.toFloat()
+        var i = -1
+        for (k in words.indices) {
+            if (words[k].startMs <= posMs) i = k else break
+        }
+        if (i < 0) return 0f
+        val w = words[i]
+        val lastWord = i + 1 >= words.size
+        val endMs = if (!lastWord) {
+            words[i + 1].startMs
+        } else {
+            val nextLine = lines.getOrNull(index + 1)?.timeMs ?: Long.MAX_VALUE
+            minOf(nextLine, w.startMs + LAST_WORD_MS)
+        }
+        val endChar = if (!lastWord) words[i + 1].charStart else line.text.length
+        val span = (endMs - w.startMs).coerceAtLeast(1L)
+        val f = ((posMs - w.startMs).toFloat() / span).coerceIn(0f, 1f)
+        return w.charStart + f * (endChar - w.charStart)
+    }
+
+    private const val LAST_WORD_MS = 1200L
 
     /** Indice de la ultima linea cuyo tiempo ya paso (busqueda binaria). -1 si aun no empieza. */
     fun currentLineIndex(lines: List<LyricLine>, positionMs: Long): Int {
@@ -78,6 +139,9 @@ object LrcParser {
         }
         return ans
     }
+
+    /** <mm:ss.xx> */
+    fun formatWordTag(ms: Long): String = "<" + formatTag(ms).drop(1).dropLast(1) + ">"
 
     /** [mm:ss.xx] */
     fun formatTag(ms: Long): String {
@@ -139,8 +203,21 @@ object LyricsRepository {
     }
 
     private fun toLrcText(l: LyricsState.Loaded): String =
-        if (l.synced) l.lines.joinToString("\n") { LrcParser.formatTag(it.timeMs) + it.text }
+        if (l.synced) l.lines.joinToString("\n") { LrcParser.formatTag(it.timeMs) + lineBody(it) }
         else l.lines.joinToString("\n") { it.text }
+
+    /** Texto de la linea para el .lrc; conserva los tiempos por palabra si los tenia. */
+    private fun lineBody(line: LyricLine): String {
+        val words = line.words ?: return line.text
+        return buildString {
+            append(line.text, 0, words.first().charStart)
+            for ((i, w) in words.withIndex()) {
+                val end = if (i + 1 < words.size) words[i + 1].charStart else line.text.length
+                append(LrcParser.formatWordTag(w.startMs))
+                append(line.text, w.charStart.coerceAtMost(end), end)
+            }
+        }
+    }
 
     /**
      * Guarda junto al audio si el sistema lo permite (Android 11+ exige "acceso a todos los archivos");

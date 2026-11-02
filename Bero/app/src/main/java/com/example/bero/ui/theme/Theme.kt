@@ -324,6 +324,7 @@ fun BeroTheme(
     gradient: Boolean = false,
     style: ThemeStyle = ThemeStyle.CLASSIC,
     artworkTint: Color? = null,
+    glass: GlassConfig = GlassConfig(),
     content: @Composable () -> Unit,
 ) {
     val scheme = remember(style, dark, accent) { schemeFor(style, dark, accent) }
@@ -335,6 +336,7 @@ fun BeroTheme(
         LocalGradientBackground provides gradient,
         LocalThemeStyle provides style,
         LocalArtworkTint provides artworkTint,
+        LocalGlassConfig provides glass,
         // El color de contenido por defecto (texto/iconos sin color explicito) SIEMPRE sigue al tema:
         // sin esto era negro en las pantallas que no estan dentro de un Surface/Scaffold (Ajustes, editor...).
         LocalContentColor provides scheme.onBackground,

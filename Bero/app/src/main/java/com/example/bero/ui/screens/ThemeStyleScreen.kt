@@ -38,6 +38,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.bero.data.ThemeStyle
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
+import com.example.bero.data.GlassQuality
+import com.example.bero.ui.components.GlassCard
 import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.components.ScreenHeader
 import com.example.bero.ui.components.pressable
@@ -81,6 +86,9 @@ fun ThemeStyleScreen(vm: BeroViewModel, onBack: () -> Unit) {
                     dark = dark,
                     onSelect = { vm.settings.setThemeStyle(style) }
                 )
+            }
+            if (current == ThemeStyle.LIQUID_GLASS) {
+                item(key = "glass_options") { GlassOptions(vm) }
             }
         }
     }
@@ -191,5 +199,57 @@ private fun StylePreview(style: ThemeStyle, accent: Color, dark: Boolean, modifi
                 }
             }
         }
+    }
+}
+
+/** Ajustes del material de cristal: calidad (rendimiento), opacidad de la pelicula y desenfoque. */
+@Composable
+private fun GlassOptions(vm: BeroViewModel) {
+    val cs = MaterialTheme.colorScheme
+    val quality by vm.settings.glassQuality.collectAsStateWithLifecycle()
+    val filmSaved by vm.settings.glassFilm.collectAsStateWithLifecycle()
+    val frostSaved by vm.settings.glassFrost.collectAsStateWithLifecycle()
+    var film by remember(filmSaved) { mutableFloatStateOf(filmSaved) }
+    var frost by remember(frostSaved) { mutableFloatStateOf(frostSaved.toFloat()) }
+    val blurAvailable = android.os.Build.VERSION.SDK_INT >= 31
+
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text("Material de cristal", fontSize = 17.sp, fontWeight = beroWeight(FontWeight.Bold))
+        Spacer(Modifier.height(6.dp))
+        GlassQuality.entries.forEach { q ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .pressable(beroShape(12.dp), 0.98f) { vm.settings.setGlassQuality(q) }
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(q.label, fontWeight = beroWeight(FontWeight.SemiBold))
+                    Text(q.description, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                }
+                if (q == quality) Icon(Icons.Rounded.Check, contentDescription = "Seleccionado", tint = cs.primary)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Película: ${(film * 100).toInt()} %", style = MaterialTheme.typography.bodyMedium)
+        Slider(
+            value = film,
+            onValueChange = { film = it },
+            onValueChangeFinished = { vm.settings.setGlassFilm(film) }
+        )
+        val frostEnabled = quality == GlassQuality.QUALITY && blurAvailable
+        Text(
+            "Desenfoque: ${frost.toInt()} dp" + if (quality == GlassQuality.QUALITY && !blurAvailable) " (requiere Android 12+)" else "",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (frostEnabled) cs.onSurface else cs.onSurface.copy(alpha = 0.4f)
+        )
+        Slider(
+            value = frost,
+            onValueChange = { frost = it },
+            onValueChangeFinished = { vm.settings.setGlassFrost(frost.toInt()) },
+            valueRange = 4f..40f,
+            enabled = frostEnabled
+        )
     }
 }

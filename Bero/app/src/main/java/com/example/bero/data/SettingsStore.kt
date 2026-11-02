@@ -16,6 +16,13 @@ enum class ThemeMode(val label: String) {
 }
 
 /** Estetica COMPLETA de la app: colores, formas, tipografia, bordes y sombras (no solo el color de acento). */
+/** Calidad del material Liquid Glass: Rapido (sin sombras ni fondo de caratula), Equilibrado, Calidad (desenfoque real, Android 12+). */
+enum class GlassQuality(val label: String, val description: String) {
+    FAST("Rápido", "Cristal simple sin fondo de carátula. El que menos consume."),
+    BALANCED("Equilibrado", "Fondo suave con la carátula y sombras. Funciona en todos los Android soportados."),
+    QUALITY("Calidad", "Fondo con desenfoque real. Requiere Android 12 o superior; en versiones anteriores usa Equilibrado."),
+}
+
 enum class ThemeStyle(val label: String, val description: String) {
     CLASSIC("Clásico", "Tu color de acento, tarjetas translúcidas y esquinas redondeadas."),
     MINIMAL("Minimalista", "Estilo Niagara: negro o blanco puros, sin tarjetas ni bordes, tipografía ligera y mucho espacio."),
@@ -78,6 +85,17 @@ class SettingsStore(context: Context) {
         }
     )
     val themeStyle: StateFlow<ThemeStyle> = _themeStyle.asStateFlow()
+
+    private val _glassQuality = MutableStateFlow(readEnum("glass_quality", GlassQuality.BALANCED))
+    val glassQuality: StateFlow<GlassQuality> = _glassQuality.asStateFlow()
+
+    /** Opacidad de la "pelicula" de las superficies de cristal (0..1; 0.5 = aspecto original). */
+    private val _glassFilm = MutableStateFlow(prefs.getFloat("glass_film", 0.5f).coerceIn(0f, 1f))
+    val glassFilm: StateFlow<Float> = _glassFilm.asStateFlow()
+
+    /** Radio de desenfoque (dp) del fondo en calidad Calidad. */
+    private val _glassFrost = MutableStateFlow(prefs.getInt("glass_frost", 20).coerceIn(4, 40))
+    val glassFrost: StateFlow<Int> = _glassFrost.asStateFlow()
 
     /** Onda sutil animada de fondo en el mini-reproductor. */
     private val _miniWave = MutableStateFlow(prefs.getBoolean("mini_wave", true))
@@ -142,6 +160,21 @@ class SettingsStore(context: Context) {
     fun setThemeStyle(style: ThemeStyle) {
         _themeStyle.value = style
         prefs.edit().putString("theme_style", style.name).apply()
+    }
+
+    fun setGlassQuality(q: GlassQuality) {
+        _glassQuality.value = q
+        prefs.edit().putString("glass_quality", q.name).apply()
+    }
+
+    fun setGlassFilm(v: Float) {
+        _glassFilm.value = v.coerceIn(0f, 1f)
+        prefs.edit().putFloat("glass_film", _glassFilm.value).apply()
+    }
+
+    fun setGlassFrost(dp: Int) {
+        _glassFrost.value = dp.coerceIn(4, 40)
+        prefs.edit().putInt("glass_frost", _glassFrost.value).apply()
     }
 
     fun setMiniWaveEnabled(enabled: Boolean) {

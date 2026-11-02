@@ -22,7 +22,23 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.bero.data.GlassQuality
 import com.example.bero.data.ThemeStyle
+
+/** Configuracion del cristal. [film] 0..1 (0.5 = original); [frostDp] solo se usa con calidad Calidad. */
+data class GlassConfig(
+    val quality: GlassQuality = GlassQuality.BALANCED,
+    val film: Float = 0.5f,
+    val frostDp: Int = 20,
+) {
+    /** Calidad realmente aplicable: el desenfoque real (RenderEffect) existe desde Android 12 (API 31). */
+    val effectiveQuality: GlassQuality
+        get() = if (quality == GlassQuality.QUALITY && android.os.Build.VERSION.SDK_INT < 31) {
+            GlassQuality.BALANCED
+        } else quality
+}
+
+val LocalGlassConfig = staticCompositionLocalOf { GlassConfig() }
 
 /** Estilo estetico activo. Cambia pocas veces => CompositionLocal estatico (lecturas sin coste de seguimiento). */
 val LocalThemeStyle = staticCompositionLocalOf { ThemeStyle.CLASSIC }
@@ -120,12 +136,15 @@ fun Modifier.beroSurface(
             .border(3.dp, if (bordered) cs.primary else cs.outline, shape)
 
         ThemeStyle.LIQUID_GLASS -> {
+            val glass = LocalGlassConfig.current
             val dark = cs.background.luminance() < 0.5f
-            val fill = remember(dark) {
+            // film 0.5 = aspecto original; 0 = mas transparente; 1 = mas opaco.
+            val k = 0.5f + glass.film
+            val fill = remember(dark, glass.film) {
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = if (dark) 0.16f else 0.72f),
-                        Color.White.copy(alpha = if (dark) 0.06f else 0.42f)
+                        Color.White.copy(alpha = ((if (dark) 0.16f else 0.72f) * k).coerceIn(0f, 0.95f)),
+                        Color.White.copy(alpha = ((if (dark) 0.06f else 0.42f) * k).coerceIn(0f, 0.95f))
                     )
                 )
             }
@@ -137,14 +156,19 @@ fun Modifier.beroSurface(
                     )
                 )
             }
-            val lifted = this
-                .shadow(
-                    elevation = 14.dp,
-                    shape = shape,
-                    ambientColor = Color.Black.copy(alpha = 0.25f),
-                    spotColor = Color.Black.copy(alpha = 0.25f)
-                )
-                .clip(shape)
+            // Rapido: sin sombra (la sombra con sombreado difuso es lo mas caro del cristal en listas largas).
+            val lifted = if (glass.quality == GlassQuality.FAST) {
+                this.clip(shape)
+            } else {
+                this
+                    .shadow(
+                        elevation = 14.dp,
+                        shape = shape,
+                        ambientColor = Color.Black.copy(alpha = 0.25f),
+                        spotColor = Color.Black.copy(alpha = 0.25f)
+                    )
+                    .clip(shape)
+            }
             (if (solidWhenMinimal) lifted.background(cs.background.copy(alpha = 0.86f)) else lifted)
                 .background(fill)
                 .border(1.dp, edge, shape)

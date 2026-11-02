@@ -106,6 +106,7 @@ import androidx.compose.ui.draw.drawBehind
 import com.example.bero.data.ThemeStyle
 import com.example.bero.ui.theme.LocalArtworkTint
 import com.example.bero.ui.theme.LocalThemeStyle
+import com.example.bero.ui.components.GlassArtworkBackdrop
 import com.example.bero.ui.theme.beroSurface
 import com.example.bero.ui.theme.contrastingOn
 
@@ -164,6 +165,7 @@ fun PlayerScreen(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> Unit) {
                 // Absorbe cualquier toque que no consuma un hijo: nada llega a las pantallas de atras.
                 .pointerInput(Unit) { detectTapGestures { } }
         ) {
+            if (style == ThemeStyle.LIQUID_GLASS) GlassArtworkBackdrop(current)
             Crossfade(targetState = showLyrics, animationSpec = tween(220), label = "playerMode") { lyricsMode ->
                 Column(
                     Modifier
