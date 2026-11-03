@@ -3,7 +3,6 @@ package com.example.bero.data
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -18,7 +17,7 @@ sealed interface TtmlSaveResult {
 
 /**
  * Almacenamiento TTML, TOTALMENTE separado del LRC. Estructura dentro del almacenamiento privado de la app:
- *   filesDir/lyrics-ttml/raw/<amllId>.ttml    archivo original tal como lo sirve la fuente (sin reescribir)
+ *   filesDir/lyrics-ttml/raw/<id>.ttml    archivo original tal como lo sirve la fuente (sin reescribir)
  *   filesDir/lyrics-ttml/links/<trackId>.json cancion local -> archivo + procedencia y autoria
  * Nunca lee ni escribe .lrc, ni junto al audio ni en filesDir/lyrics. Los nombres de archivo son solo numericos.
  */
@@ -34,7 +33,7 @@ object TtmlRepository {
     }
 
     private fun linkFile(trackId: Long): File? = linkDir?.let { File(it, "$trackId.json") }
-    private fun rawFile(amllId: Long): File? = rawDir?.let { File(it, "$amllId.ttml") }
+    private fun rawFile(sourceId: Long): File? = rawDir?.let { File(it, "$sourceId.ttml") }
 
     fun has(trackId: Long): Boolean = linkFile(trackId)?.isFile == true
 
@@ -44,7 +43,7 @@ object TtmlRepository {
         try {
             val link = linkFile(track.id)?.takeIf { it.isFile } ?: return@withContext null
             val meta = JSONObject(link.readText())
-            val raw = rawFile(meta.optLong("amllId", -1L))?.takeIf { it.isFile } ?: return@withContext null
+            val raw = rawFile(meta.optLong("sourceId", -1L))?.takeIf { it.isFile } ?: return@withContext null
             val doc = TtmlParser.parse(raw.readText()) ?: return@withContext null
             val loaded = TtmlLyricsState.Loaded(doc, creditLine(meta))
             cache[track.id] = loaded
@@ -55,7 +54,7 @@ object TtmlRepository {
     }
 
     /** Valida el XML, guarda el original sin alterarlo y relaciona el archivo con la pista. */
-    suspend fun save(track: Track, song: AmllSong, ttml: String): TtmlSaveResult = withContext(Dispatchers.IO) {
+    suspend fun save(track: Track, song: TtmlSong, ttml: String): TtmlSaveResult = withContext(Dispatchers.IO) {
         val doc = TtmlParser.parse(ttml) ?: return@withContext TtmlSaveResult.InvalidXml
         val raw = rawFile(song.id)
         val link = linkFile(track.id)
@@ -74,45 +73,48 @@ object TtmlRepository {
     suspend fun remove(trackId: Long) = withContext(Dispatchers.IO) {
         cache.remove(trackId)
         val link = linkFile(trackId) ?: return@withContext
-        val amllId = try {
-            JSONObject(link.readText()).optLong("amllId", -1L)
+        val sourceId = try {
+            JSONObject(link.readText()).optLong("sourceId", -1L)
         } catch (e: Exception) {
             -1L
         }
         link.delete()
-        if (amllId >= 0) {
+        if (sourceId >= 0) {
             val stillUsed = linkDir?.listFiles()?.any {
                 try {
-                    JSONObject(it.readText()).optLong("amllId", -2L) == amllId
+                    JSONObject(it.readText()).optLong("sourceId", -2L) == sourceId
                 } catch (e: Exception) {
                     false
                 }
             } == true
-            if (!stillUsed) rawFile(amllId)?.delete()
+            if (!stillUsed) rawFile(sourceId)?.delete()
         }
     }
 
-    private fun linkJson(track: Track, song: AmllSong): JSONObject = JSONObject().apply {
+    private fun linkJson(track: Track, song: TtmlSong): JSONObject = JSONObject().apply {
         put("trackId", track.id)
-        put("amllId", song.id)
-        put("filename", song.filename)
+        put("sourceId", song.id)
+        put("videoId", song.videoId)
         put("savedAt", System.currentTimeMillis())
-        put("source", AmllClient.SOURCE_NAME)
-        put("sourceUrl", AmllClient.SOURCE_URL)
-        // Procedencia y autoria tal como las publica la fuente. Las condiciones de cada contribucion
-        // las fija la fuente (aportes de usuarios en CC0; contenido externo segun su proveedor original).
-        put("authorUsernames", JSONArray(song.authorUsernames))
-        put("authorIds", JSONArray(song.authorIds))
-        put("musicNames", JSONArray(song.musicNames))
-        put("artistNames", JSONArray(song.artistNames))
-        put("albumNames", JSONArray(song.albumNames))
+        put("source", UnisonClient.SOURCE_NAME)
+        put("sourceUrl", UnisonClient.SOURCE_URL)
+        // Procedencia tal como la publica la fuente (base comunitaria): las condiciones de cada contribucion las fija ella.
+        put("title", song.title)
+        put("artist", song.artist)
+        put("album", song.album)
+        put("language", song.language ?: "")
+        put("syncType", song.syncType)
+        put("confidence", song.confidence ?: "")
     }
 
     private fun creditLine(meta: JSONObject): String {
-        val authors = meta.optJSONArray("authorUsernames")
-        val names = (0 until (authors?.length() ?: 0)).mapNotNull { authors?.optString(it)?.takeIf { s -> s.isNotBlank() } }
-        val by = if (names.isEmpty()) "" else " · " + names.take(4).joinToString(", ") { "@$it" }
-        return "Letra sincronizada: ${meta.optString("source", AmllClient.SOURCE_NAME)}$by"
+        val conf = when (meta.optString("confidence")) {
+            "high" -> " · confianza alta"
+            "medium" -> " · confianza media"
+            "low" -> " · confianza baja"
+            else -> ""
+        }
+        return "Letra sincronizada: ${meta.optString("source", UnisonClient.SOURCE_NAME)} (comunidad)$conf"
     }
 
     /** Escritura atomica: un corte a mitad no deja un TTML a medias. */

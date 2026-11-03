@@ -36,9 +36,9 @@ import com.example.bero.data.SmartProfile
 import com.example.bero.data.SmartShuffle
 import com.example.bero.data.Track
 import com.example.bero.data.TrackInfo
-import com.example.bero.data.AmllClient
-import com.example.bero.data.AmllResult
-import com.example.bero.data.AmllSong
+import com.example.bero.data.TtmlApiResult
+import com.example.bero.data.TtmlSong
+import com.example.bero.data.UnisonClient
 import com.example.bero.data.TtmlCandidate
 import com.example.bero.data.TtmlLyricsState
 import com.example.bero.data.TtmlMatcher
@@ -1048,7 +1048,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ------------------------------------------------------------------ Letras TTML (AMLL TTML DB) — independiente del LRC
+    // ------------------------------------------------------------------ Letras TTML (Unison) — independiente del LRC
 
     sealed interface TtmlSearchOutcome {
         data class Found(val candidates: List<TtmlCandidate>) : TtmlSearchOutcome
@@ -1058,22 +1058,27 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     fun hasTtml(track: Track): Boolean = TtmlRepository.has(track.id)
 
+    /** true = en la pantalla de letras se muestra el TTML (si existe); false = se fuerza el LRC. Se recuerda entre sesiones. */
+    val ttmlPreferred: StateFlow<Boolean> = settings.ttmlPreferred
+
+    fun setTtmlPreferred(on: Boolean) = settings.setTtmlPreferred(on)
+
     suspend fun searchTtml(track: Track): TtmlSearchOutcome = withContext(Dispatchers.IO) {
-        when (val r = AmllClient.search(track)) {
-            is AmllResult.Ok -> TtmlSearchOutcome.Found(TtmlMatcher.rank(track, r.value))
-            AmllResult.NotFound -> TtmlSearchOutcome.NotFound
-            is AmllResult.RateLimited -> TtmlSearchOutcome.Error("Demasiadas solicitudes a AMLL. Inténtalo en ${r.retryAfterSec} s")
-            is AmllResult.Failure -> TtmlSearchOutcome.Error(r.message)
+        when (val r = UnisonClient.search(track)) {
+            is TtmlApiResult.Ok -> TtmlSearchOutcome.Found(TtmlMatcher.rank(track, r.value))
+            TtmlApiResult.NotFound -> TtmlSearchOutcome.NotFound
+            is TtmlApiResult.RateLimited -> TtmlSearchOutcome.Error("Demasiadas solicitudes a Unison. Inténtalo en ${r.retryAfterSec} s")
+            is TtmlApiResult.Failure -> TtmlSearchOutcome.Error(r.message)
         }
     }
 
     /** Descarga el TTML elegido por el usuario y lo guarda (solo en lyrics-ttml; el LRC no se toca). */
-    fun downloadTtml(track: Track, song: AmllSong, onDone: (Boolean) -> Unit = {}) {
+    fun downloadTtml(track: Track, song: TtmlSong, onDone: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
             toast("Descargando letra TTML…")
-            val fetched = withContext(Dispatchers.IO) { AmllClient.fetchTtml(song) }
+            val fetched = withContext(Dispatchers.IO) { UnisonClient.fetchTtml(song) }
             val ok = when (fetched) {
-                is AmllResult.Ok -> when (val saved = TtmlRepository.save(track, song, fetched.value)) {
+                is TtmlApiResult.Ok -> when (val saved = TtmlRepository.save(track, song, fetched.value)) {
                     is TtmlSaveResult.Saved -> {
                         val level = when (saved.level) {
                             TtmlSyncLevel.SYLLABLE -> "sincronizada por sílaba"
@@ -1088,9 +1093,9 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                     TtmlSaveResult.NotFound -> { toast("No se encontró el archivo TTML"); false }
                     is TtmlSaveResult.Failed -> { toast(saved.message); false }
                 }
-                AmllResult.NotFound -> { toast("AMLL no devolvió el archivo TTML"); false }
-                is AmllResult.RateLimited -> { toast("Demasiadas solicitudes a AMLL. Inténtalo en ${fetched.retryAfterSec} s"); false }
-                is AmllResult.Failure -> { toast(fetched.message); false }
+                TtmlApiResult.NotFound -> { toast("Unison no devolvió el archivo TTML"); false }
+                is TtmlApiResult.RateLimited -> { toast("Demasiadas solicitudes a Unison. Inténtalo en ${fetched.retryAfterSec} s"); false }
+                is TtmlApiResult.Failure -> { toast(fetched.message); false }
             }
             if (ok) _ttmlVersion.value = _ttmlVersion.value + 1
             onDone(ok)
@@ -1109,7 +1114,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                     val strong = TtmlMatcher.strongUnique(r.candidates)
                     if (strong != null) downloadTtml(track, strong.song) else onNeedsChoice()
                 }
-                TtmlSearchOutcome.NotFound -> toast("No hay letra TTML para esta canción en AMLL")
+                TtmlSearchOutcome.NotFound -> toast("No hay letra TTML para esta canción en Unison")
                 is TtmlSearchOutcome.Error -> toast(r.message)
             }
         }

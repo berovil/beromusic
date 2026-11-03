@@ -46,3 +46,16 @@ QuickLyric ni ningún `.lrc`.
 
 ## Pendiente
 Comprobar en dispositivo: servicio AMLL, scroll del panel TTML, rendimiento. Puntos interlúdicos, lista de cola/álbum y resto del audit de rendimiento.
+
+---
+
+# Intervención 3: cambio de fuente TTML y selector TTML/LRC
+
+- AMLL TTML DB (api.amll.dev) no conectaba en el dispositivo: se sustituye por **Unison** (https://unison.boidu.dev, base comunitaria con TTML,
+  lecturas sin clave, 120 solicitudes/min). Sigue habiendo UNA sola fuente. `AmllClient.kt` se elimina; nuevo `data/UnisonClient.kt`.
+  Búsqueda por canción+artista(+álbum+duración), con respaldo por texto libre; solo se listan resultados en formato TTML, con nivel de sincronización
+  (richsync/linesync), idioma y confianza. Los errores de red ahora indican el tipo (DNS, TLS, tiempo agotado) para poder diagnosticar.
+- TtmlMatcher usa también la duración. TtmlRepository guarda `sourceId`/`videoId` y la procedencia (Unison, confianza).
+- Pantalla de letras: botón micrófono con brillos (`ui/screens/TtmlModeToggle.kt`). Activo = letra TTML; pulsar otra vez = vuelve el LRC.
+  Sin TTML guardado, pulsarlo lo busca/descarga. La preferencia se recuerda (SettingsStore.ttml_preferred).
+- NO verificado: que Unison responda desde el móvil, ni el tamaño de su catálogo. No compilado.

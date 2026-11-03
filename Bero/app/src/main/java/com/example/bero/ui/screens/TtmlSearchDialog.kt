@@ -30,7 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.bero.data.AmllClient
+import com.example.bero.data.UnisonClient
 import com.example.bero.data.MatchQuality
 import com.example.bero.data.Track
 import com.example.bero.data.TtmlCandidate
@@ -38,7 +38,7 @@ import com.example.bero.ui.BeroViewModel
 import com.example.bero.ui.theme.beroWeight
 
 /**
- * Buscador de letras TTML (fuente unica: AMLL TTML DB). Muestra los candidatos y deja elegir; nada se descarga
+ * Buscador de letras TTML (fuente unica: Unison). Muestra los candidatos y deja elegir; nada se descarga
  * hasta que el usuario toca un resultado. La busqueda de AMLL no trae el TTML, asi que el nivel de sincronizacion
  * y el idioma solo se conocen tras descargar (se informa al terminar).
  */
@@ -66,17 +66,17 @@ fun TtmlSearchDialog(vm: BeroViewModel, track: Track, onDismiss: () -> Unit) {
                 when (val o = outcome) {
                     null -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                        Text("  Buscando en ${AmllClient.SOURCE_NAME}…")
+                        Text("  Buscando en ${UnisonClient.SOURCE_NAME}…")
                     }
 
                     BeroViewModel.TtmlSearchOutcome.NotFound ->
-                        Text("No hay letras TTML para esta canción en ${AmllClient.SOURCE_NAME}.")
+                        Text("No hay letras TTML para esta canción en ${UnisonClient.SOURCE_NAME}.")
 
                     is BeroViewModel.TtmlSearchOutcome.Error -> Text(o.message)
 
                     is BeroViewModel.TtmlSearchOutcome.Found -> Column {
                         Text(
-                            "Elige la grabación correcta. Nivel de sincronización e idioma se comprueban al descargar.",
+                            "Elige la grabación correcta. Solo se muestran letras en formato TTML.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -110,6 +110,23 @@ private fun CandidateRow(c: TtmlCandidate, enabled: Boolean, onClick: () -> Unit
         MatchQuality.POSSIBLE -> "Posible coincidencia"
         MatchQuality.LOW -> "Coincidencia baja"
     }
+    val sync = when (c.song.syncType.lowercase()) {
+        "richsync" -> "Sincronizada por sílaba/palabra"
+        "linesync" -> "Sincronizada por línea"
+        else -> "Sincronización no indicada"
+    }
+    val confidence = when (c.song.confidence) {
+        "high" -> "confianza alta"
+        "medium" -> "confianza media"
+        "low" -> "confianza baja"
+        else -> null
+    }
+    val details = listOfNotNull(
+        sync,
+        c.song.language?.let { "idioma: $it" },
+        confidence,
+        c.song.durationSec?.let { "%d:%02d".format(it / 60, it % 60) }
+    ).joinToString(" · ")
     Box(
         Modifier
             .fillMaxWidth()
@@ -117,31 +134,25 @@ private fun CandidateRow(c: TtmlCandidate, enabled: Boolean, onClick: () -> Unit
             .padding(vertical = 6.dp)
     ) {
         Column {
-            Text(c.title.ifEmpty { "—" }, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(c.song.title.ifEmpty { "—" }, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
-                listOf(c.artist, c.album).filter { it.isNotBlank() }.joinToString(" · "),
+                listOf(c.song.artist, c.song.album).filter { it.isNotBlank() }.joinToString(" · "),
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "$quality · TTML · ${AmllClient.SOURCE_NAME}",
+                "$quality · TTML · ${UnisonClient.SOURCE_NAME}",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.primary
             )
+            Text(details, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (c.versionMismatch) {
                 Text(
-                    "Posible versión distinta (live, remix, acústica, instrumental…)",
+                    "Posible versión distinta (live, remix, acústica, duración distinta…)",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.error
-                )
-            }
-            if (c.song.authorUsernames.isNotEmpty()) {
-                Text(
-                    "Aportada por " + c.song.authorUsernames.take(3).joinToString(", ") { "@$it" },
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

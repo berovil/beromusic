@@ -273,6 +273,7 @@ private fun ColumnScope.LyricsModeContent(vm: BeroViewModel, current: Track, acc
 
     LyricsSection(
         vm,
+        current,
         accent,
         Modifier
             .weight(1f)
@@ -292,15 +293,37 @@ private fun ColumnScope.LyricsModeContent(vm: BeroViewModel, current: Track, acc
 }
 
 @Composable
-private fun LyricsSection(vm: BeroViewModel, accent: Color, modifier: Modifier) {
+private fun LyricsSection(vm: BeroViewModel, current: Track, accent: Color, modifier: Modifier) {
     val lyrics by vm.lyrics.collectAsStateWithLifecycle()
-    // Una letra TTML guardada tiene prioridad visual; si no hay, se usa el sistema LRC existente sin cambios.
     val ttml by vm.ttmlLyrics.collectAsStateWithLifecycle()
-    when (val t = ttml) {
-        is TtmlLyricsState.Loaded -> TtmlLyricsPanel(vm, t, modifier)
-        TtmlLyricsState.Loading -> Box(modifier)
-        TtmlLyricsState.None -> LyricsPanel(vm, lyrics, accent, modifier)
+    val preferTtml by vm.ttmlPreferred.collectAsStateWithLifecycle()
+    var showTtmlDialog by remember { mutableStateOf(false) }
+    val t = ttml
+    val ttmlActive = preferTtml && t is TtmlLyricsState.Loaded
+
+    Box(modifier) {
+        val inner = Modifier.fillMaxSize()
+        // TTML si existe y esta activado; en cualquier otro caso, el sistema LRC existente sin cambios.
+        when {
+            preferTtml && t is TtmlLyricsState.Loaded -> TtmlLyricsPanel(vm, t, inner)
+            preferTtml && t is TtmlLyricsState.Loading -> Box(inner)
+            else -> LyricsPanel(vm, lyrics, accent, inner)
+        }
+        TtmlModeToggle(
+            active = ttmlActive,
+            accent = accent,
+            modifier = Modifier.align(Alignment.TopEnd)
+        ) {
+            if (t is TtmlLyricsState.Loaded) {
+                vm.setTtmlPreferred(!preferTtml)
+            } else {
+                // Sin TTML guardado: se busca (descarga directa si la coincidencia es clara; si no, se elige en la lista).
+                vm.setTtmlPreferred(true)
+                vm.quickDownloadTtml(current) { showTtmlDialog = true }
+            }
+        }
     }
+    if (showTtmlDialog) TtmlSearchDialog(vm, current) { showTtmlDialog = false }
 }
 
 // ============================================================================ PIEZAS AISLADAS

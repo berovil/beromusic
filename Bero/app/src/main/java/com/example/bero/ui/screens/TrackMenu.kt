@@ -65,7 +65,7 @@ fun TrackMenuSheet(
     onRemoveFromFolder: (() -> Unit)?,
     onShare: () -> Unit,
     onDelete: () -> Unit,
-    // Letras TTML (AMLL TTML DB): sistema independiente del LRC; los parametros por defecto no alteran otros usos.
+    // Letras TTML (Unison): sistema independiente del LRC; los parametros por defecto no alteran otros usos.
     hasTtml: Boolean = false,
     onSearchTtml: () -> Unit = {},
     onDownloadTtml: () -> Unit = {},

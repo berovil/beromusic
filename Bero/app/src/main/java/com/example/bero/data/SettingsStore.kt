@@ -138,6 +138,9 @@ class SettingsStore(context: Context) {
     private val _spectrogram = MutableStateFlow(prefs.getBoolean("spectrogram", true))
     val spectrogramEnabled: StateFlow<Boolean> = _spectrogram.asStateFlow()
 
+    private val _ttmlPreferred = MutableStateFlow(prefs.getBoolean("ttml_preferred", true))
+    val ttmlPreferred: StateFlow<Boolean> = _ttmlPreferred.asStateFlow()
+
     private val _visualizerStyle = MutableStateFlow(readEnum("visualizer_style", VisualizerStyle.BARS))
     val visualizerStyle: StateFlow<VisualizerStyle> = _visualizerStyle.asStateFlow()
 
@@ -207,6 +210,11 @@ class SettingsStore(context: Context) {
     fun setMinSeconds(seconds: Int) {
         _minSeconds.value = seconds
         prefs.edit().putInt("min_seconds", seconds).apply()
+    }
+
+    fun setTtmlPreferred(on: Boolean) {
+        _ttmlPreferred.value = on
+        prefs.edit().putBoolean("ttml_preferred", on).apply()
     }
 
     fun setSpectrogramEnabled(enabled: Boolean) {
