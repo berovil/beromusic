@@ -108,6 +108,7 @@ import com.example.bero.ui.theme.LocalArtworkTint
 import com.example.bero.ui.theme.LocalThemeStyle
 import com.example.bero.ui.components.GlassArtworkBackdrop
 import com.example.bero.ui.theme.beroSurface
+import com.example.bero.data.TtmlLyricsState
 import com.example.bero.ui.theme.contrastingOn
 
 /**
@@ -293,7 +294,13 @@ private fun ColumnScope.LyricsModeContent(vm: BeroViewModel, current: Track, acc
 @Composable
 private fun LyricsSection(vm: BeroViewModel, accent: Color, modifier: Modifier) {
     val lyrics by vm.lyrics.collectAsStateWithLifecycle()
-    LyricsPanel(vm, lyrics, accent, modifier)
+    // Una letra TTML guardada tiene prioridad visual; si no hay, se usa el sistema LRC existente sin cambios.
+    val ttml by vm.ttmlLyrics.collectAsStateWithLifecycle()
+    when (val t = ttml) {
+        is TtmlLyricsState.Loaded -> TtmlLyricsPanel(vm, t, modifier)
+        TtmlLyricsState.Loading -> Box(modifier)
+        TtmlLyricsState.None -> LyricsPanel(vm, lyrics, accent, modifier)
+    }
 }
 
 // ============================================================================ PIEZAS AISLADAS

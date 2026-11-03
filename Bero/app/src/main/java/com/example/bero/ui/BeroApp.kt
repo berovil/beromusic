@@ -97,6 +97,7 @@ import com.example.bero.ui.screens.PlayerScreen
 import com.example.bero.ui.screens.SettingsScreen
 import com.example.bero.ui.screens.TrackInfoDialog
 import com.example.bero.ui.screens.TrackMenuSheet
+import com.example.bero.ui.screens.TtmlSearchDialog
 import com.example.bero.ui.screens.TracksScreen
 import com.example.bero.ui.theme.appBackground
 import com.example.bero.ui.theme.beroShape
@@ -222,6 +223,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
     var infoTrack by remember { mutableStateOf<Track?>(null) }
     var deleteTrack by remember { mutableStateOf<Track?>(null) }
     var editorTrack by remember { mutableStateOf<Track?>(null) }
+    var ttmlTrack by remember { mutableStateOf<Track?>(null) }
     var editorOpen by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
 
@@ -364,6 +366,19 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
                     menuTrack = null
                     vm.searchLyricsOnline(t)
                 },
+                hasTtml = vm.hasTtml(t),
+                onSearchTtml = {
+                    menuTrack = null
+                    ttmlTrack = t
+                },
+                onDownloadTtml = {
+                    menuTrack = null
+                    vm.quickDownloadTtml(t) { ttmlTrack = t }
+                },
+                onRemoveTtml = {
+                    menuTrack = null
+                    vm.removeTtml(t)
+                },
                 onEditLrc = {
                     menuTrack = null
                     editorTrack = t
@@ -390,6 +405,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
             )
         }
         infoTrack?.let { t -> TrackInfoDialog(vm, t) { infoTrack = null } }
+        ttmlTrack?.let { t -> TtmlSearchDialog(vm, t) { ttmlTrack = null } }
         addToFolderTrack?.let { t ->
             AddToFolderDialog(
                 playlists = playlists,

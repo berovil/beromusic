@@ -160,14 +160,14 @@ fun Modifier.beroSurface(
             val lifted = if (glass.quality == GlassQuality.FAST) {
                 this.clip(shape)
             } else {
-                this
-                    .shadow(
-                        elevation = 14.dp,
-                        shape = shape,
-                        ambientColor = Color.Black.copy(alpha = 0.25f),
-                        spotColor = Color.Black.copy(alpha = 0.25f)
-                    )
-                    .clip(shape)
+                // shadow(clip = true) ya recorta al shape: el .clip(shape) que iba detras era una segunda capa de recorte.
+                this.shadow(
+                    elevation = 14.dp,
+                    shape = shape,
+                    clip = true,
+                    ambientColor = Color.Black.copy(alpha = 0.25f),
+                    spotColor = Color.Black.copy(alpha = 0.25f)
+                )
             }
             (if (solidWhenMinimal) lifted.background(cs.background.copy(alpha = 0.86f)) else lifted)
                 .background(fill)

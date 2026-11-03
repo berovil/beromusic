@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +65,11 @@ fun TrackMenuSheet(
     onRemoveFromFolder: (() -> Unit)?,
     onShare: () -> Unit,
     onDelete: () -> Unit,
+    // Letras TTML (AMLL TTML DB): sistema independiente del LRC; los parametros por defecto no alteran otros usos.
+    hasTtml: Boolean = false,
+    onSearchTtml: () -> Unit = {},
+    onDownloadTtml: () -> Unit = {},
+    onRemoveTtml: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -94,6 +100,9 @@ fun TrackMenuSheet(
             }
             MenuAction(Icons.Rounded.Info, "Ver información", onInfo)
             MenuAction(Icons.Rounded.CloudDownload, "Buscar letra en línea", onSearchLyrics)
+            MenuAction(Icons.Rounded.Search, "Buscar letras TTML en línea", onSearchTtml)
+            MenuAction(Icons.Rounded.CloudDownload, "Descargar letras sincronizadas (.TTML)", onDownloadTtml)
+            if (hasTtml) MenuAction(Icons.Rounded.RemoveCircleOutline, "Quitar letra TTML descargada", onRemoveTtml)
             MenuAction(Icons.Rounded.Edit, "Editar letra (LRC)", onEditLrc)
             MenuAction(Icons.Rounded.CreateNewFolder, "Añadir a carpeta", onAddToFolder)
             if (onRemoveFromFolder != null) {

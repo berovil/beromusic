@@ -36,6 +36,15 @@ import com.example.bero.data.SmartProfile
 import com.example.bero.data.SmartShuffle
 import com.example.bero.data.Track
 import com.example.bero.data.TrackInfo
+import com.example.bero.data.AmllClient
+import com.example.bero.data.AmllResult
+import com.example.bero.data.AmllSong
+import com.example.bero.data.TtmlCandidate
+import com.example.bero.data.TtmlLyricsState
+import com.example.bero.data.TtmlMatcher
+import com.example.bero.data.TtmlRepository
+import com.example.bero.data.TtmlSaveResult
+import com.example.bero.data.TtmlSyncLevel
 import com.example.bero.service.PlaybackService
 import com.example.bero.lastfm.DeezerRepository
 import com.example.bero.lastfm.ExternalSuggestion
@@ -242,6 +251,25 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LyricsState.Idle)
 
+    private val _ttmlVersion = MutableStateFlow(0)
+
+    /** Letra TTML guardada de la pista actual. Solo lectura local (sin red); es independiente del flujo LRC de arriba. */
+    val ttmlLyrics: StateFlow<TtmlLyricsState> = combine(_currentTrack, _showLyrics, _ttmlVersion) { track, show, version ->
+        if (show && track != null) track to version else null
+    }
+        .distinctUntilChanged()
+        .flatMapLatest { request ->
+            if (request == null) {
+                flowOf<TtmlLyricsState>(TtmlLyricsState.None)
+            } else {
+                flow<TtmlLyricsState> {
+                    emit(TtmlLyricsState.Loading)
+                    emit(TtmlRepository.load(request.first) ?: TtmlLyricsState.None)
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TtmlLyricsState.None)
+
     // ------------------------------------------------------------------ Last.fm / Smart Shuffle
 
     private val _lastFmStatus = MutableStateFlow(
@@ -364,6 +392,7 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         LyricsRepository.init(ctx)
+        TtmlRepository.init(ctx)
         connect()
         loadLibrary()
         viewModelScope.launch {
@@ -1016,6 +1045,81 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                 DownloadResult.FAILED -> toast("Se encontró la letra pero no se pudo guardar")
             }
             _lyricsVersion.value = _lyricsVersion.value + 1
+        }
+    }
+
+    // ------------------------------------------------------------------ Letras TTML (AMLL TTML DB) — independiente del LRC
+
+    sealed interface TtmlSearchOutcome {
+        data class Found(val candidates: List<TtmlCandidate>) : TtmlSearchOutcome
+        data object NotFound : TtmlSearchOutcome
+        data class Error(val message: String) : TtmlSearchOutcome
+    }
+
+    fun hasTtml(track: Track): Boolean = TtmlRepository.has(track.id)
+
+    suspend fun searchTtml(track: Track): TtmlSearchOutcome = withContext(Dispatchers.IO) {
+        when (val r = AmllClient.search(track)) {
+            is AmllResult.Ok -> TtmlSearchOutcome.Found(TtmlMatcher.rank(track, r.value))
+            AmllResult.NotFound -> TtmlSearchOutcome.NotFound
+            is AmllResult.RateLimited -> TtmlSearchOutcome.Error("Demasiadas solicitudes a AMLL. Inténtalo en ${r.retryAfterSec} s")
+            is AmllResult.Failure -> TtmlSearchOutcome.Error(r.message)
+        }
+    }
+
+    /** Descarga el TTML elegido por el usuario y lo guarda (solo en lyrics-ttml; el LRC no se toca). */
+    fun downloadTtml(track: Track, song: AmllSong, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            toast("Descargando letra TTML…")
+            val fetched = withContext(Dispatchers.IO) { AmllClient.fetchTtml(song) }
+            val ok = when (fetched) {
+                is AmllResult.Ok -> when (val saved = TtmlRepository.save(track, song, fetched.value)) {
+                    is TtmlSaveResult.Saved -> {
+                        val level = when (saved.level) {
+                            TtmlSyncLevel.SYLLABLE -> "sincronizada por sílaba"
+                            TtmlSyncLevel.WORD -> "sincronizada por palabra"
+                            TtmlSyncLevel.LINE -> "sincronizada solo por línea"
+                            TtmlSyncLevel.NONE -> "sin sincronización"
+                        }
+                        toast("Letra TTML guardada ($level)" + if (saved.hasTranslation) " con traducción" else "")
+                        true
+                    }
+                    TtmlSaveResult.InvalidXml -> { toast("El archivo descargado no es un TTML válido"); false }
+                    TtmlSaveResult.NotFound -> { toast("No se encontró el archivo TTML"); false }
+                    is TtmlSaveResult.Failed -> { toast(saved.message); false }
+                }
+                AmllResult.NotFound -> { toast("AMLL no devolvió el archivo TTML"); false }
+                is AmllResult.RateLimited -> { toast("Demasiadas solicitudes a AMLL. Inténtalo en ${fetched.retryAfterSec} s"); false }
+                is AmllResult.Failure -> { toast(fetched.message); false }
+            }
+            if (ok) _ttmlVersion.value = _ttmlVersion.value + 1
+            onDone(ok)
+        }
+    }
+
+    /**
+     * "Descargar letras sincronizadas (.TTML)": solo descarga sola si hay UNA coincidencia fuerte y sin dudas de version;
+     * en cualquier otro caso llama a [onNeedsChoice] para que el usuario elija en el buscador.
+     */
+    fun quickDownloadTtml(track: Track, onNeedsChoice: () -> Unit) {
+        viewModelScope.launch {
+            toast("Buscando letra TTML de \"${track.title}\"…")
+            when (val r = searchTtml(track)) {
+                is TtmlSearchOutcome.Found -> {
+                    val strong = TtmlMatcher.strongUnique(r.candidates)
+                    if (strong != null) downloadTtml(track, strong.song) else onNeedsChoice()
+                }
+                TtmlSearchOutcome.NotFound -> toast("No hay letra TTML para esta canción en AMLL")
+                is TtmlSearchOutcome.Error -> toast(r.message)
+            }
+        }
+    }
+
+    fun removeTtml(track: Track) {
+        viewModelScope.launch {
+            TtmlRepository.remove(track.id)
+            _ttmlVersion.value = _ttmlVersion.value + 1
+            toast("Letra TTML eliminada (el .lrc no se ha tocado)")
         }
     }
 
