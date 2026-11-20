@@ -68,7 +68,15 @@ dependencies {
 
     // Pruebas unitarias locales (parser de letras)
     testImplementation("junit:junit:4.13.2")
-    // org.json is stubbed by the Android mockable android.jar in local JVM tests.
-    // Use the real JSON implementation so SpicyLyricsMapperTest exercises actual parsing.
-    testImplementation("org.json:json:20240303")
+}
+
+
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showCauses = true
+        showExceptions = true
+        showStackTraces = true
+    }
 }

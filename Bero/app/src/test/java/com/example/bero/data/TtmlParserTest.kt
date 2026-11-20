@@ -31,7 +31,7 @@ class TtmlParserTest {
 <span begin="1.000" end="1.500">Hello</span> <span begin="1.500" end="2.000">big</span> <span begin="2.000" end="3.000">world</span>
 </p></div></body></tt>"""
         val doc = TtmlParser.parse(xml)!!
-        assertEquals(TtmlSyncLevel.WORD, doc.level)
+        assertEquals("level=${doc.level}, text='${doc.lines.single().text}', ranges=${doc.lines.single().syllables}", TtmlSyncLevel.WORD, doc.level)
         val l = doc.lines.single()
         assertEquals("Hello big world", l.text)
         assertEquals(3, l.syllables.size)

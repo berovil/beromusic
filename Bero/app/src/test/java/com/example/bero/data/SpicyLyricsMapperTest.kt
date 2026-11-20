@@ -1,6 +1,5 @@
 package com.example.bero.data
 
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -8,36 +7,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SpicyLyricsMapperTest {
+    private fun obj(vararg values: Pair<String, Any?>): Map<String, Any?> = mapOf(*values)
+
     @Test
     fun syllableResponseBecomesTimedTtmlAndKeepsCredits() {
-        val body = JSONObject(
-            """
-            {
-              "id": "0123456789ABCDEFGHIJKL",
-              "source": "spicy_lyrics",
-              "Type": "Syllable",
-              "Content": [
-                {
-                  "Type": "Vocal",
-                  "Lead": {
-                    "StartTime": 1.0,
-                    "EndTime": 2.1,
-                    "Syllables": [
-                      {"Text": "Hel", "StartTime": 1.0, "EndTime": 1.2, "IsPartOfWord": true},
-                      {"Text": "lo", "StartTime": 1.2, "EndTime": 1.5, "IsPartOfWord": false},
-                      {"Text": "world", "StartTime": 1.6, "EndTime": 2.1, "IsPartOfWord": false}
-                    ],
-                    "TranslatedText": "Hola mundo",
-                    "TransliteratedText": "hello world"
-                  }
-                }
-              ],
-              "UploadAttribution": {
-                "Uploader": {"username": "uploader", "url": "https://spicylyrics.org/uid/uploader"},
-                "Maker": {"username": "maker", "url": "https://spicylyrics.org/uid/maker"}
-              }
-            }
-            """.trimIndent()
+        val body = obj(
+            "id" to "0123456789ABCDEFGHIJKL",
+            "source" to "spicy_lyrics",
+            "Type" to "Syllable",
+            "Content" to listOf(
+                obj(
+                    "Type" to "Vocal",
+                    "Lead" to obj(
+                        "StartTime" to 1.0,
+                        "EndTime" to 2.1,
+                        "Syllables" to listOf(
+                            obj("Text" to "Hel", "StartTime" to 1.0, "EndTime" to 1.2, "IsPartOfWord" to true),
+                            obj("Text" to "lo", "StartTime" to 1.2, "EndTime" to 1.5, "IsPartOfWord" to false),
+                            obj("Text" to "world", "StartTime" to 1.6, "EndTime" to 2.1, "IsPartOfWord" to false),
+                        ),
+                        "TranslatedText" to "Hola mundo",
+                        "TransliteratedText" to "hello world",
+                    ),
+                    "Background" to listOf(
+                        obj("Syllables" to listOf(obj(
+                            "Text" to "echo", "StartTime" to 1.7, "EndTime" to 2.0, "IsPartOfWord" to false
+                        )))
+                    ),
+                )
+            ),
+            "UploadAttribution" to obj(
+                "Uploader" to obj("username" to "uploader", "url" to "https://spicylyrics.org/uid/uploader"),
+                "Maker" to obj("username" to "maker", "url" to "https://spicylyrics.org/uid/maker"),
+            ),
         )
 
         val payload = SpicyLyricsMapper.map(body)
@@ -51,27 +53,26 @@ class SpicyLyricsMapperTest {
         assertEquals("Hello world", document.lines.single().text)
         assertEquals("Hola mundo", document.lines.single().translation)
         assertEquals("hello world", document.lines.single().roman)
+        assertEquals("echo", document.lines.single().background?.text)
     }
 
     @Test
     fun lineResponseBecomesLineSynchronizedTtml() {
-        val body = JSONObject(
-            """
-            {
-              "id": "0123456789ABCDEFGHIJKL",
-              "source": "apple_music",
-              "Type": "Line",
-              "Content": [
-                {
-                  "Type": "Vocal",
-                  "Text": "An example line",
-                  "StartTime": 4.0,
-                  "EndTime": 5.5,
-                  "TranslatedText": "Una línea de ejemplo"
-                }
-              ]
-            }
-            """.trimIndent()
+        val body = obj(
+            "id" to "0123456789ABCDEFGHIJKL",
+            "source" to "apple_music",
+            "Type" to "Line",
+            "Content" to listOf(
+                obj(
+                    "Type" to "Vocal",
+                    "Lead" to obj(
+                        "Text" to "An example line",
+                        "StartTime" to 4.0,
+                        "EndTime" to 5.5,
+                        "TranslatedText" to "Una línea de ejemplo",
+                    ),
+                )
+            ),
         )
 
         val payload = SpicyLyricsMapper.map(body)
@@ -88,18 +89,14 @@ class SpicyLyricsMapperTest {
 
     @Test
     fun staticResponseRemainsUnsynchronized() {
-        val body = JSONObject(
-            """
-            {
-              "id": "0123456789ABCDEFGHIJKL",
-              "source": "spotify",
-              "Type": "Static",
-              "Lines": [
-                {"Text": "First line"},
-                {"Text": "Second line"}
-              ]
-            }
-            """.trimIndent()
+        val body = obj(
+            "id" to "0123456789ABCDEFGHIJKL",
+            "source" to "spotify",
+            "Type" to "Static",
+            "Content" to listOf(
+                obj("Type" to "Vocal", "Lead" to obj("Text" to "First line")),
+                obj("Type" to "Vocal", "Lead" to obj("Text" to "Second line")),
+            ),
         )
 
         val payload = SpicyLyricsMapper.map(body)
