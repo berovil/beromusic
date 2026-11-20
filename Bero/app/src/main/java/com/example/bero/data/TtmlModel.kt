@@ -82,11 +82,18 @@ data class TtmlDocument(
     }
 }
 
+@Immutable
+data class TtmlCreditLink(val label: String, val url: String)
+
 /** Estado de la letra TTML de la pista actual (independiente de [LyricsState]). */
 sealed interface TtmlLyricsState {
     data object None : TtmlLyricsState
     data object Loading : TtmlLyricsState
 
     @Immutable
-    data class Loaded(val doc: TtmlDocument, val credit: String) : TtmlLyricsState
+    data class Loaded(
+        val doc: TtmlDocument,
+        val credit: String,
+        val creditLinks: List<TtmlCreditLink> = emptyList(),
+    ) : TtmlLyricsState
 }

@@ -22,7 +22,7 @@ jobs:
           java-version: '17'
 
       - name: Compilar el APK
-        run: gradle assembleDebug
+        run: gradle testDebugUnitTest assembleDebug
         working-directory: Bero
 
       - name: Subir APK para descargar

@@ -45,6 +45,9 @@ import com.example.bero.data.TtmlMatcher
 import com.example.bero.data.TtmlRepository
 import com.example.bero.data.TtmlSaveResult
 import com.example.bero.data.TtmlSyncLevel
+import com.example.bero.data.SpicyLyricsClient
+import com.example.bero.data.SpicyApiResult
+import com.example.bero.data.SpicyTrackCandidate
 import com.example.bero.service.PlaybackService
 import com.example.bero.lastfm.DeezerRepository
 import com.example.bero.lastfm.ExternalSuggestion
@@ -1045,6 +1048,82 @@ class BeroViewModel(application: Application) : AndroidViewModel(application) {
                 DownloadResult.FAILED -> toast("Se encontró la letra pero no se pudo guardar")
             }
             _lyricsVersion.value = _lyricsVersion.value + 1
+        }
+    }
+
+    // ------------------------------------------------------------------ Letras Spicy Lyrics (proveedor adicional; caché privada de 30 días)
+
+    sealed interface SpicyLyricsSearchOutcome {
+        data class Found(val candidates: List<SpicyTrackCandidate>) : SpicyLyricsSearchOutcome
+        data object NotFound : SpicyLyricsSearchOutcome
+        data object NotConfigured : SpicyLyricsSearchOutcome
+        data class Error(val message: String) : SpicyLyricsSearchOutcome
+    }
+
+    suspend fun searchSpicyLyrics(track: Track): SpicyLyricsSearchOutcome = withContext(Dispatchers.IO) {
+        when (val result = SpicyLyricsClient.search(track)) {
+            is SpicyApiResult.Ok -> SpicyLyricsSearchOutcome.Found(result.value)
+            SpicyApiResult.NotFound -> SpicyLyricsSearchOutcome.NotFound
+            SpicyApiResult.NotConfigured -> SpicyLyricsSearchOutcome.NotConfigured
+            is SpicyApiResult.RateLimited ->
+                SpicyLyricsSearchOutcome.Error("Límite de solicitudes alcanzado. Inténtalo en ${result.retryAfterSec} s")
+            is SpicyApiResult.Failure -> SpicyLyricsSearchOutcome.Error(result.message)
+        }
+    }
+
+    /**
+     * Muestra la letra elegida y mantiene una caché privada dentro de Bero por un máximo de 30 días.
+     * No genera archivos descargables ni modifica ningún .lrc o el proveedor TTML de Unison.
+     */
+    fun useSpicyLyrics(track: Track, candidate: SpicyTrackCandidate, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            toast("Obteniendo letras de Spicy Lyrics…")
+            val fetched = withContext(Dispatchers.IO) { SpicyLyricsClient.fetchLyrics(candidate.id) }
+            val ok = when (fetched) {
+                is SpicyApiResult.Ok -> when (val saved = TtmlRepository.saveSpicyLyrics(track, fetched.value)) {
+                    is TtmlSaveResult.Saved -> {
+                        val level = when (saved.level) {
+                            TtmlSyncLevel.SYLLABLE -> "sincronizada por sílaba"
+                            TtmlSyncLevel.WORD -> "sincronizada por palabra"
+                            TtmlSyncLevel.LINE -> "sincronizada por línea"
+                            TtmlSyncLevel.NONE -> "sin sincronización"
+                        }
+                        setTtmlPreferred(true)
+                        toast("Letra de Spicy Lyrics lista ($level)")
+                        true
+                    }
+                    TtmlSaveResult.InvalidXml -> {
+                        toast("No se pudo interpretar la sincronización recibida")
+                        false
+                    }
+                    TtmlSaveResult.NotFound -> {
+                        toast("No se encontraron letras para esta versión")
+                        false
+                    }
+                    is TtmlSaveResult.Failed -> {
+                        toast(saved.message)
+                        false
+                    }
+                }
+                SpicyApiResult.NotFound -> {
+                    toast("No hay letras disponibles para esta versión")
+                    false
+                }
+                SpicyApiResult.NotConfigured -> {
+                    toast("Spicy Lyrics todavía no está configurado en esta compilación")
+                    false
+                }
+                is SpicyApiResult.RateLimited -> {
+                    toast("Límite de solicitudes alcanzado. Inténtalo en ${fetched.retryAfterSec} s")
+                    false
+                }
+                is SpicyApiResult.Failure -> {
+                    toast(fetched.message)
+                    false
+                }
+            }
+            if (ok) _ttmlVersion.value = _ttmlVersion.value + 1
+            onDone(ok)
         }
     }
 

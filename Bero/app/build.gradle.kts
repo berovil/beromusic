@@ -20,6 +20,13 @@ android {
         // LASTFM_API_KEY (gradle.properties local, NO subir al repositorio). Sin clave, la app pide la del usuario.
         val lastFmKey = (System.getenv("LASTFM_API_KEY") ?: (project.findProperty("LASTFM_API_KEY") as String?) ?: "").trim()
         buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmKey\"")
+
+        // Clave publicable de Spicy Lyrics para cliente Android. Nunca usar una clave secreta sl_sk_ en el APK.
+        // Configurarla en gradle.properties local o como variable de entorno de CI.
+        val spicyLyricsKey = (System.getenv("SPICY_LYRICS_PUBLISHABLE_KEY")
+            ?: (project.findProperty("SPICY_LYRICS_PUBLISHABLE_KEY") as String?) ?: "").trim()
+        val escapedSpicyLyricsKey = spicyLyricsKey.replace("\\", "\\\\").replace("\"", "\\\"")
+        buildConfigField("String", "SPICY_LYRICS_PUBLISHABLE_KEY", "\"$escapedSpicyLyricsKey\"")
     }
 
     buildTypes {

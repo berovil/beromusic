@@ -3,6 +3,7 @@ package com.example.bero.ui.screens
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.DragInteraction
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -159,6 +161,7 @@ private fun TtmlLyricsContent(
     }
 
     val fg = LocalContentColor.current
+    val uriHandler = LocalUriHandler.current
     LazyColumn(
         state = listState,
         modifier = modifier
@@ -177,15 +180,30 @@ private fun TtmlLyricsContent(
             )
         }
         item(key = "credit", contentType = "credit") {
-            Text(
-                state.credit,
-                color = fg.copy(alpha = 0.45f),
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
+            Column(
+                Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 24.dp)
-            )
+                    .padding(horizontal = 12.dp, vertical = 24.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+            ) {
+                Text(
+                    state.credit,
+                    color = fg.copy(alpha = 0.55f),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+                state.creditLinks.forEach { link ->
+                    Text(
+                        text = link.label,
+                        color = fg.copy(alpha = 0.72f),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .clickable { runCatching { uriHandler.openUri(link.url) } }
+                            .padding(top = 4.dp)
+                    )
+                }
+            }
         }
         item(key = "bottom", contentType = "spacer") { Spacer(Modifier.height(bottomSpacer)) }
     }

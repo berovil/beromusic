@@ -68,6 +68,7 @@ fun TrackMenuSheet(
     // Letras TTML (Unison): sistema independiente del LRC; los parametros por defecto no alteran otros usos.
     hasTtml: Boolean = false,
     onSearchTtml: () -> Unit = {},
+    onSearchSpicyLyrics: () -> Unit = {},
     onDownloadTtml: () -> Unit = {},
     onRemoveTtml: () -> Unit = {},
 ) {
@@ -100,6 +101,7 @@ fun TrackMenuSheet(
             }
             MenuAction(Icons.Rounded.Info, "Ver información", onInfo)
             MenuAction(Icons.Rounded.CloudDownload, "Buscar letra en línea", onSearchLyrics)
+            MenuAction(Icons.Rounded.Search, "Buscar letras con Spicy Lyrics", onSearchSpicyLyrics)
             MenuAction(Icons.Rounded.Search, "Buscar letras TTML en línea", onSearchTtml)
             MenuAction(Icons.Rounded.CloudDownload, "Descargar letras sincronizadas (.TTML)", onDownloadTtml)
             if (hasTtml) MenuAction(Icons.Rounded.RemoveCircleOutline, "Quitar letra TTML descargada", onRemoveTtml)
