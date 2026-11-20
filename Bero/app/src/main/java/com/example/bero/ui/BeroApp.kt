@@ -98,6 +98,7 @@ import com.example.bero.ui.screens.SettingsScreen
 import com.example.bero.ui.screens.TrackInfoDialog
 import com.example.bero.ui.screens.TrackMenuSheet
 import com.example.bero.ui.screens.TtmlSearchDialog
+import com.example.bero.ui.screens.SpicyLyricsSearchDialog
 import com.example.bero.ui.screens.TracksScreen
 import com.example.bero.ui.theme.appBackground
 import com.example.bero.ui.theme.beroShape
@@ -224,6 +225,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
     var deleteTrack by remember { mutableStateOf<Track?>(null) }
     var editorTrack by remember { mutableStateOf<Track?>(null) }
     var ttmlTrack by remember { mutableStateOf<Track?>(null) }
+    var spicyLyricsTrack by remember { mutableStateOf<Track?>(null) }
     var editorOpen by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
 
@@ -371,6 +373,10 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
                     menuTrack = null
                     ttmlTrack = t
                 },
+                onSearchSpicyLyrics = {
+                    menuTrack = null
+                    spicyLyricsTrack = t
+                },
                 onDownloadTtml = {
                     menuTrack = null
                     vm.quickDownloadTtml(t) { ttmlTrack = t }
@@ -406,6 +412,7 @@ private fun LibraryApp(vm: BeroViewModel, hasMic: Boolean, onRequestMic: () -> U
         }
         infoTrack?.let { t -> TrackInfoDialog(vm, t) { infoTrack = null } }
         ttmlTrack?.let { t -> TtmlSearchDialog(vm, t) { ttmlTrack = null } }
+        spicyLyricsTrack?.let { t -> SpicyLyricsSearchDialog(vm, t) { spicyLyricsTrack = null } }
         addToFolderTrack?.let { t ->
             AddToFolderDialog(
                 playlists = playlists,

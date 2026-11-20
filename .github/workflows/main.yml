@@ -22,8 +22,16 @@ jobs:
           java-version: '17'
 
       - name: Compilar el APK
-        run: gradle assembleDebug
+        run: gradle testDebugUnitTest assembleDebug
         working-directory: Bero
+
+      - name: Subir informe de pruebas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-test-results
+          path: Bero/app/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
 
       - name: Subir APK para descargar
         uses: actions/upload-artifact@v4

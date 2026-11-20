@@ -213,9 +213,9 @@ object TtmlParser {
                 return
             }
             if ((leading || pendingSpace) && sb.isNotEmpty() && sb.last() != ' ') {
+                // Keep the separator outside the timed syllable range. Extending charEnd
+                // across the space makes adjacent words look like an intra-word syllable split.
                 sb.append(' ')
-                val last = syls.last()
-                syls[syls.lastIndex] = last.copy(charEnd = sb.length)
             }
             pendingSpace = false
             val cs = sb.length
